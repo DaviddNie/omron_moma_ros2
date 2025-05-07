@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: tm_description
+    relative_path: xacro/tm12s.urdf.xacro
+  srdf:
+    relative_path: config/tm12s.srdf
+  package_settings:
+    author_name: Yh Wang
+    author_email: yh.wang@tm-robot.com
+    generated_timestamp: 1719571103
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
