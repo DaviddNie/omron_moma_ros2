@@ -57,7 +57,7 @@ Note that when building from scratch your computer may freeze. Instead use expor
   - Build the package
   - source install/setup.bash
   - export ROS_DOMAIN_ID=5
-  - ros2 launch tm_12s_moveit_config tm12s_run_move_group.launch.py 192.168.1.2
+  - ros2 launch tm12s_moveit_config tm12s_run_move_group.launch.py robot_ip:=192.168.1.2
   - Note that this will run the tm_driver as well, so currently will only work wired. Will look to splitting the functionality soon
 
 # Custom Packages
@@ -134,6 +134,10 @@ The package allows the user to move the TM to a custom joint configuration
 Note that you have to add your key-value pair in the dictionary for the command to work, it's located at `Omron_TM_ROS2/src/wireless/src/wireless/server.py`
 
 e.g. `"home": [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0],`
+
+## Camera Code
+
+`ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true enable_color:=true enable_depth:=true pointcloud.enable:=true`
 
 ## Demo program
 

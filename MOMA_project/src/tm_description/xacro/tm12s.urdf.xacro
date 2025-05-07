@@ -16,6 +16,13 @@
   <!-- you must modify 'macro.tm12s-nominal.urdf.xacro' to 'user_defined.urdf.xacro'  -->
   <xacro:include filename="$(find tm_description)/xacro/macro.tm12s-nominal.urdf.xacro" />
 
+  <link name="camera_link"> </link>
+
+  <joint name="camera_joint" type="fixed">
+      <parent link="flange"/>
+      <child link="camera_link"/>
+      <origin xyz="0 -0.1 0.02" rpy="0 -${pi/2} 0"/>
+  </joint>
 
   <!--  -->
   <xacro:tmr_gazebo ns="$(arg ns)" prefix="$(arg prefix)" />
