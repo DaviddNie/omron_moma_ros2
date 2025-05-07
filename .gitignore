@@ -25,3 +25,7 @@ Omron_TM_ROS2/src/pickplace/pickplace/__pycache__/
 MOMA_project/build
 MOMA_project/install
 MOMA_project/log
+MOMA_project/src/amr_arcl_interface/amr_arcl_interface/__pycache__
+MOMA_project/src/om_aiv_util/om_aiv_util/__pycache__
+MOMA_project/src/wireless/src/wireless/__pycache__
+MOMA_project/src/om_aiv_util/om_aiv_util/__pycache__

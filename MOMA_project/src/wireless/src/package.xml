@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>wireless</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="moma@todo.todo">moma</maintainer>
+  <license>TODO: License declaration</license>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <depend>rclpy</depend>   <!-- Add rclpy as a runtime dependency -->
+  <depend>tm_msgs</depend> <!-- Add tm_msgs as a dependency -->
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  
+  <!-- Declare tm_msgs as a runtime dependency -->
+  
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <member_of_group>ros_nodes</member_of_group>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

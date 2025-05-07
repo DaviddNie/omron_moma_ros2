@@ -25,6 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Status.msg"
   "srv/ArclApi.srv"
   "srv/ArclListen.srv"
+  "srv/AmrCmd.srv"
   "action/Action.action"
 )
 # uncomment the following section in order to fill in

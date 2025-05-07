@@ -45,6 +45,7 @@ set(msg_files
 set(srv_files
   "srv/ConnectTM.srv"
   "srv/WriteItem.srv"
+  "srv/WirelessInfo.srv"
   "srv/AskItem.srv"
   "srv/SendScript.srv"
   "srv/SetEvent.srv"
