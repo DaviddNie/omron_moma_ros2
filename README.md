@@ -60,6 +60,10 @@ Note that when building from scratch your computer may freeze. Instead use expor
   - ros2 launch tm12s_moveit_config tm12s_run_move_group.launch.py robot_ip:=192.168.1.2
   - Note that this will run the tm_driver as well, so currently will only work wired. Will look to splitting the functionality soon
 
+### Get Current Joint Configuration in radian **when moveit is running**
+
+`ros2 topic echo /joint_states --once | grep position`
+
 # Custom Packages
 
 
