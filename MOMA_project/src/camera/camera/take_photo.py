@@ -51,6 +51,10 @@ class OneFrameSubscriber(Node):
         color_image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8')
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
 
+        # Flip both vertically
+        color_image = cv2.flip(color_image, 0)
+        depth_image = cv2.flip(depth_image, 0)
+
         # Optional: normalize depth for visualization
         depth_visual = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
         depth_visual = cv2.convertScaleAbs(depth_visual)
