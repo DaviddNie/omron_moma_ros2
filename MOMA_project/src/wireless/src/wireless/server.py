@@ -10,11 +10,12 @@ from tm_msgs.msg import *
 import time
 
 LIGHT_COMMAND = "light"
-MOVEARM_COMMAND = "movearm"
+MOVE2JOINTPOS = "movejoint"
 EXIT_COMMAND = "exit"
 LISTENNING_COMMAND = "listen"
 GRIP_COMMAND = "grip"
 RELEASE_COMMAND = "release"
+MOVE2POINT_COMMAND = "move2point"
 
 class WriteItemServer(Node):
 
@@ -56,13 +57,21 @@ class WriteItemServer(Node):
 			callback_group=self.service_group
 		)
 		# Define the mapping of string names to position arrays
-		self.position_map = {
+		self.joint_config_map = {
 			# dwp1 stands for david_waypoint_1
 			"dwp1": [0.0, 0.0, 90.0, 0.0, 90.0, 0.0],
 			"home": [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0],
 			"grip1": [-64.576, 11.229, 125.22, -44.482, 92.837, 25.893],
 			"release1": [-123.047, 38.727, 37.145, 14.696, 91.281, -3.0],
 			"camera_home": [-90.0, -11.09, 89.32, 11.75, 90.01, -0.0049],
+			# Add more positions as needed
+		}
+
+		self.position_map = {
+			"home": [-0.182, -0.664, 0.613, 180.0, 0.0, 0.0],
+			"movex": [-0.082, -0.664, 0.613, 180.0, 0.0, 0.0],
+			"movey": [-0.182, -0.564, 0.613, 180.0, 0.0, 0.0],
+			"movez": [-0.182, -0.764, 0.713, 180.0, 0.0, 0.0],
 			# Add more positions as needed
 		}
 
@@ -120,9 +129,10 @@ class WriteItemServer(Node):
 			return await self.light_request(request.param1) 
 		if request.command == LISTENNING_COMMAND:
 			return await self.listenning_request(request.param1) # True or False
-		elif request.command == MOVEARM_COMMAND:
-			# self.blockUntilListen()
-			return await self.send_position(request.param1)
+		elif request.command == MOVE2JOINTPOS:
+			return await self.move2JointConfig(request.param1)
+		elif request.command == MOVE2POINT_COMMAND:
+			return await self.move2Point(request.param1)
 		elif request.command == GRIP_COMMAND:
 			return await self.gripper_engage(True)
 		elif request.command == RELEASE_COMMAND:
@@ -130,7 +140,7 @@ class WriteItemServer(Node):
 		elif request.command == EXIT_COMMAND:
 			return await self.send_exit()
 		else:
-			return "Invalid value received. Only 'light', 'movearm', 'grip', 'release', 'exit' is allowed."
+			return "Invalid value received. Only 'light', 'movejoint', 'move2point', 'grip', 'release', 'exit' is allowed."
 			
 	async def gripper_engage(self, engage):
 		# Please see gripper documentation and TM Expression (modbus_write) for more detail
@@ -189,19 +199,36 @@ class WriteItemServer(Node):
 		return future.result().ok
 
 
-	async def send_position(self, param1):
-		if param1 not in self.position_map:
+	async def move2JointConfig(self, param1):
+		if param1 not in self.joint_config_map:
 			return f"Error: '{param1}' not found in position map."
 
 		req = SetPositions.Request()
 		req.motion_type = 1
 
-		req.positions = [math.radians(angle) for angle in self.position_map[param1]]
+		req.positions = [math.radians(angle) for angle in self.joint_config_map[param1]]
 		# e.g. 
 		# req.positions = [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0]
 
 		req.velocity = 0.9
 		req.acc_time = 0.05
+		req.blend_percentage = 1
+		req.fine_goal = False
+		future = self.cli_2.call_async(req)
+		await future
+		return future.result().ok
+	
+	async def move2Point(self, param1):
+		if param1 not in self.position_map:
+			return f"Error: '{param1}' not found in position map."
+
+		req = SetPositions.Request()
+		req.motion_type = 2
+
+		req.positions = self.position_map[param1]
+
+		req.velocity = 0.9
+		req.acc_time = 0.5
 		req.blend_percentage = 1
 		req.fine_goal = False
 		future = self.cli_2.call_async(req)

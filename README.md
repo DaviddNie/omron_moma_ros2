@@ -126,7 +126,12 @@ The package allows the user to move the TM to a custom joint configuration
 1. `command = "light, param1"` 
    `param1 = "1"` || `param1 = "0"`
 
-2. `command = "movearm param1"`
+2. Move to a joint configuration in angles
+  `command = "movejoint param1"` 
+	`param1 = <string>` e.g. `param1 = "home"`
+
+2. Move to (x,y,z) wrt. base
+  `command = "move2point param1"`
 	`param1 = <string>` e.g. `param1 = "home"`
 
 3. `command = "grip`
