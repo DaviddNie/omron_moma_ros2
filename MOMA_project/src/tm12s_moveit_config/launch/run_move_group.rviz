@@ -11,7 +11,6 @@ Panels:
         - /PointCloud21
         - /TF1
         - /TF1/Frames1
-        - /RobotModel1
         - /RobotModel1/Description Topic1
       Splitter Ratio: 0.5
     Tree Height: 583
@@ -266,7 +265,7 @@ Visualization Manager:
       Frames:
         All Enabled: false
         base:
-          Value: false
+          Value: true
         camera_color_frame:
           Value: false
         camera_color_optical_frame:
@@ -439,16 +438,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.8737963438034058
+      Distance: 1.8129215240478516
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.2870546877384186
-        Y: -0.48919135332107544
-        Z: 0.6103043556213379
+        X: -0.1524420529603958
+        Y: -0.2684854567050934
+        Z: 0.22904443740844727
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

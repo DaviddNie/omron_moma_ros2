@@ -21,7 +21,7 @@
   <joint name="camera_joint" type="fixed">
       <parent link="flange"/>
       <child link="camera_link"/>
-      <origin xyz="0 -0.1372 0.0345" rpy="0 -${pi/2} 0"/>
+      <origin xyz="0 -0.1372 0.0345" rpy="${pi/2} -${pi/2} 0"/>
   </joint>
 
   <!--  -->
