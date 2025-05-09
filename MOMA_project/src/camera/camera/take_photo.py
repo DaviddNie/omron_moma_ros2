@@ -94,32 +94,29 @@ class ObjectDetectionNode(Node):
         return point_3d
 
     def transform_to_base_frame(self, point_camera_frame, timestamp):
-        """Transform a point from camera frame to base frame using TF2"""
-        try:
-            # Create a PointStamped message in the camera frame
-            point_stamped = PointStamped()
-            point_stamped.header.frame_id = "camera_link"
-            point_stamped.header.stamp = timestamp
-            point_stamped.point.x = point_camera_frame[0]
-            point_stamped.point.y = point_camera_frame[1]
-            point_stamped.point.z = point_camera_frame[2]
-
-            # Lookup the transform from camera_link to base
-            transform = self.tf_buffer.lookup_transform(
-                "base",                   # target frame
-                "camera_link",             # source frame
-                timestamp,                # time of the transform
-                rclpy.duration.Duration(seconds=0.1)  # timeout
-            )
-
-            # Transform the point to base frame
-            point_base_frame = do_transform_point(point_stamped, transform)
-            
-            return [point_base_frame.point.x, point_base_frame.point.y, point_base_frame.point.z]
-            
-        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-            self.get_logger().error(f"TF2 error: {str(e)}")
-            return None
+        for _ in range(10):  # Retry for 10 seconds
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    'base',
+                    'camera_link',
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=1.0)
+                )
+                # Transform the point and return
+                point_stamped = PointStamped()
+                point_stamped.header.frame_id = "camera_link"
+                point_stamped.header.stamp = timestamp
+                point_stamped.point.x = point_camera_frame[0]
+                point_stamped.point.y = point_camera_frame[1]
+                point_stamped.point.z = point_camera_frame[2]
+                return do_transform_point(point_stamped, transform)
+                
+            except tf2_ros.TransformException as e:
+                self.get_logger().warn(f"Waiting for transform: {e}")
+                rclpy.spin_once(self, timeout_sec=1.0)
+        
+        self.get_logger().error("Failed to get transform after 10 attempts!")
+        return None
 
     def image_callback(self, color_msg, depth_msg):
         if self.received:
@@ -178,7 +175,8 @@ class ObjectDetectionNode(Node):
                             f"Pixel: ({x_center}, {y_center}), "
                             f"Depth: {depth_value} mm, "
                             f"Camera Frame: ({point_3d[0]:.3f}, {point_3d[1]:.3f}, {point_3d[2]:.3f}) m, "
-                            f"Base Frame: ({point_base[0]:.3f}, {point_base[1]:.3f}, {point_base[2]:.3f}) m, "
+                            # f"Base Frame: ({point_base[0]:.3f}, {point_base[1]:.3f}, {point_base[2]:.3f}) m, "
+                            f"Base Frame: ({point_base.point.x:.3f}, {point_base.point.y:.3f}, {point_base.point.z:.3f}) m, "
                             f"Confidence: {confidence:.2f}"
                         )
 
@@ -193,11 +191,11 @@ class ObjectDetectionNode(Node):
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                         
                         # Display base frame coordinates
-                        cv2.putText(annotated_image, f"X: {point_base[0]:.2f}m", (int(box[0]), int(box[1]) - 10),
+                        cv2.putText(annotated_image, f"X: {point_base.point.x:.2f}m", (int(box[0]), int(box[1]) - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                        cv2.putText(annotated_image, f"Y: {point_base.point.y:.2f}m", (int(box[0]), int(box[1]) - 30),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                        cv2.putText(annotated_image, f"Y: {point_base[1]:.2f}m", (int(box[0]), int(box[1]) - 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                        cv2.putText(annotated_image, f"Z: {point_base[2]:.2f}m", (int(box[0]), int(box[1]) - 50),
+                        cv2.putText(annotated_image, f"Z: {point_base.point.z:.2f}m", (int(box[0]), int(box[1]) - 50),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # Show results
