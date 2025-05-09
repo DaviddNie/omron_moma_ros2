@@ -1,129 +1,191 @@
 import rclpy
 from rclpy.node import Node
-
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 import cv2
 import numpy as np
-
+import pyrealsense2 as rs
+from cv_bridge import CvBridge
+from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import Point
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from ultralytics import YOLO
 
-
-class OneFrameSubscriber(Node):
+class ObjectDetectionNode(Node):
     def __init__(self):
-        super().__init__('one_frame_subscriber')
+        super().__init__('object_detection_node')
 
+        # Declare parameters
         self.declare_parameter('yolo_model_path', '/absolute/path/to/yolov11m.pt')
         model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
 
+        # Initialize CV bridge
         self.bridge = CvBridge()
-
+        
+        # Load YOLO model
         self.get_logger().info(f"Loading YOLO model from: {model_path}")
         self.model = YOLO(model_path)
         
-        # Subscribers to both color and aligned depth
+        # Camera intrinsics (will be populated from camera info)
+        self.intrinsics = None
+        
+        # Subscribers
         self.color_sub = Subscriber(self, Image, '/camera/camera/color/image_raw')
         self.depth_sub = Subscriber(self, Image, '/camera/camera/aligned_depth_to_color/image_raw')
-
-        # Synchronize the messages
+        self.cam_info_sub = self.create_subscription(
+            CameraInfo, 
+            '/camera/camera/aligned_depth_to_color/camera_info',
+            self.camera_info_callback,
+            10
+        )
+        
+        # Synchronizer for color and depth images
         self.ts = ApproximateTimeSynchronizer([self.color_sub, self.depth_sub], queue_size=10, slop=0.1)
-        self.ts.registerCallback(self.callback)
+        self.ts.registerCallback(self.image_callback)
 
+        # Flag to track if we've processed a frame
         self.received = False
 
-        self.apple_class_index = 47  # Replace with the actual index for "apple"
+        # Class index for the object we want to detect (47 for apple in COCO)
+        self.target_class_index = 47  # Replace with your target class index
 
-    def callback(self, color_msg, depth_msg):
+    def camera_info_callback(self, camera_info):
+        """Callback for camera info to get intrinsics"""
+        if self.intrinsics is not None:
+            return
+            
+        self.intrinsics = rs.intrinsics()
+        self.intrinsics.width = camera_info.width
+        self.intrinsics.height = camera_info.height
+        self.intrinsics.ppx = camera_info.k[2]
+        self.intrinsics.ppy = camera_info.k[5]
+        self.intrinsics.fx = camera_info.k[0]
+        self.intrinsics.fy = camera_info.k[4]
+        
+        if camera_info.distortion_model == 'plumb_bob':
+            self.intrinsics.model = rs.distortion.brown_conrady
+        elif camera_info.distortion_model == 'equidistant':
+            self.intrinsics.model = rs.distortion.kannala_brandt4
+            
+        self.intrinsics.coeffs = [i for i in camera_info.d]
+        self.get_logger().info("Received camera intrinsics")
+
+    def pixel_to_3d(self, pixel_x, pixel_y, depth_value):
+        """Convert pixel coordinates + depth to 3D point in camera frame"""
+        if self.intrinsics is None:
+            self.get_logger().warn("Camera intrinsics not available yet")
+            return None
+            
+        # Depth value is in mm, convert to meters for the deprojection
+        depth_in_meters = depth_value * 0.001
+        
+        # Note: The order of pixel coordinates is (x, y) for rs2_deproject_pixel_to_point
+        point_3d = rs.rs2_deproject_pixel_to_point(
+            self.intrinsics, 
+            [pixel_x, pixel_y], 
+            depth_in_meters
+        )
+        
+        return point_3d
+
+    def image_callback(self, color_msg, depth_msg):
         if self.received:
-            return  # Only want one frame
+            return  # Only process one frame
 
         self.get_logger().info("Received synchronized color and depth frames")
 
         # Convert ROS Image messages to OpenCV
-        color_image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8')
-        depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+        try:
+            color_image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8')
+            depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+        except Exception as e:
+            self.get_logger().error(f"Error converting images: {str(e)}")
+            return
 
-        # Flip both vertically
+        # Flip both vertically (if needed)
         color_image = cv2.flip(color_image, 0)
         depth_image = cv2.flip(depth_image, 0)
 
+        # Resize (if needed)
         color_image = cv2.resize(color_image, (640, 480))
         depth_image = cv2.resize(depth_image, (640, 480))
 
-        # === YOLO Detection ===
-        results = self.model(color_image)[0]  # Get first result from the batch
-        annotated_image = color_image.copy()  # Start with the original image to draw on
+        # Run YOLO detection
+        results = self.model(color_image)[0]
+        annotated_image = color_image.copy()
 
-        # Get the bounding boxes (in xyxy format), class labels, and confidence scores
+        # Get detection results
         boxes = results.boxes.xyxy.cpu().numpy()
         class_ids = results.boxes.cls.cpu().numpy()
-        confidences = results.boxes.conf.cpu().numpy()  # Get the confidence scores
+        confidences = results.boxes.conf.cpu().numpy()
 
-        # Filter out all detections that are not "apple"
-        apple_boxes = []
+        # Process detections
         for i, class_id in enumerate(class_ids):
-            if class_id == self.apple_class_index:
+            if class_id == self.target_class_index and confidences[i] >= 0.5:
                 box = boxes[i]
-                confidence = confidences[i]  # Get the confidence for this detection
+                confidence = confidences[i]
 
-                # Only consider the detection if confidence is above a threshold (e.g., 0.5)
-                if confidence >= 0.5:
-                    # Calculate the center of the bounding box (x_center, y_center)
-                    x_center = int((box[0] + box[2]) / 2)
-                    y_center = int((box[1] + box[3]) / 2)
+                # Calculate center of bounding box
+                x_center = int((box[0] + box[2]) / 2)
+                y_center = int((box[1] + box[3]) / 2)
 
-                    # Get the depth at the center of the bounding box
-                    depth_value = depth_image[y_center, x_center]
+                # Get depth at center point
+                depth_value = depth_image[y_center, x_center]
 
-                    # Log or print the center, depth, and confidence
-                    self.get_logger().info(f"Detected apple at (x, y): ({x_center}, {y_center}), Depth: {depth_value} mm, Confidence: {confidence}")
+                # Convert to 3D coordinates in camera frame
+                point_3d = self.pixel_to_3d(x_center, y_center, depth_value)
+                
+                if point_3d is not None:
+                    # Here you would typically transform to global coordinates using TF2
+                    # For now, we'll just use the camera-frame coordinates
+                    x_global = point_3d[0]
+                    y_global = point_3d[1]
+                    z_global = point_3d[2]
+                    
+                    self.get_logger().info(
+                        f"Detected object at: "
+                        f"Pixel: ({x_center}, {y_center}), "
+                        f"Depth: {depth_value} mm, "
+                        f"Global: ({x_global:.3f}, {y_global:.3f}, {z_global:.3f}) m, "
+                        f"Confidence: {confidence:.2f}"
+                    )
 
-                    # Add the bounding box, depth, and confidence data to the list of apple detections
-                    apple_boxes.append((box, depth_value, confidence))
+                # Draw visualization
+                cv2.rectangle(annotated_image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
+                cv2.circle(annotated_image, (x_center, y_center), 5, (0, 255, 0), -1)
+                
+                # Add text annotations
+                cv2.putText(annotated_image, f"Depth: {depth_value}mm", (x_center + 10, y_center),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(annotated_image, f"{confidence:.2f}", (int(box[2]), int(box[3]) + 15),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                
+                if point_3d is not None:
+                    cv2.putText(annotated_image, f"X: {point_3d[0]:.2f}m", (int(box[0]), int(box[1]) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                    cv2.putText(annotated_image, f"Y: {point_3d[1]:.2f}m", (int(box[0]), int(box[1]) - 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                    cv2.putText(annotated_image, f"Z: {point_3d[2]:.2f}m", (int(box[0]), int(box[1]) - 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-                    # Draw the apple bounding box
-                    cv2.rectangle(annotated_image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
-
-                    # Draw center dot
-                    cv2.circle(annotated_image, (x_center, y_center), 5, (0, 255, 0), -1)
-
-                    # Display the depth next to the center dot
-                    cv2.putText(annotated_image, f"Depth: {depth_value}mm", (x_center + 10, y_center),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-
-                    # Display the confidence score at the bottom-right of the bounding box
-                    conf_x = int(box[2])
-                    conf_y = int(box[3]) + 15  # 15 pixels below the bottom-right corner
-                    cv2.putText(annotated_image, f"{confidence:.2f} apple", (conf_x, conf_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-
-        # If no apples are detected, log this
-        if not apple_boxes:
-            self.get_logger().info("No apples detected in the image.")
-
-        # Optional: normalize depth for visualization
+        # Show results
+        cv2.imshow('Object Detection with 3D Coordinates', annotated_image)
+        
+        # Normalize depth for visualization
         depth_visual = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
         depth_visual = cv2.convertScaleAbs(depth_visual)
-
-        # Show the images with apple detections
-        cv2.imshow('YOLO Detected Apples with Depth', annotated_image)
         cv2.imshow('Depth Image', depth_visual)
-
-        # Use a short loop instead of waitKey(0)
+        
+        # Wait for key press
         while True:
-            if cv2.waitKey(100) == 27:  # ESC key to close
+            if cv2.waitKey(100) == 27:  # ESC key to exit
                 break
 
         cv2.destroyAllWindows()
-
         self.received = True
         rclpy.shutdown()
 
-
 def main():
     rclpy.init()
-    node = OneFrameSubscriber()
+    node = ObjectDetectionNode()
     try:
         while rclpy.ok() and not node.received:
             rclpy.spin_once(node, timeout_sec=0.1)
@@ -132,7 +194,6 @@ def main():
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
