@@ -5,9 +5,12 @@ import numpy as np
 import pyrealsense2 as rs
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import PointStamped, Point
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from ultralytics import YOLO
+import tf2_ros
+from tf2_geometry_msgs import do_transform_point
+from geometry_msgs.msg import TransformStamped
 
 class ObjectDetectionNode(Node):
     def __init__(self):
@@ -24,8 +27,12 @@ class ObjectDetectionNode(Node):
         self.get_logger().info(f"Loading YOLO model from: {model_path}")
         self.model = YOLO(model_path)
         
-        # Camera intrinsics (will be populated from camera info)
+        # Camera intrinsics
         self.intrinsics = None
+        
+        # TF2 setup
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
         # Subscribers
         self.color_sub = Subscriber(self, Image, '/camera/camera/color/image_raw')
@@ -86,6 +93,34 @@ class ObjectDetectionNode(Node):
         
         return point_3d
 
+    def transform_to_base_frame(self, point_camera_frame, timestamp):
+        """Transform a point from camera frame to base frame using TF2"""
+        try:
+            # Create a PointStamped message in the camera frame
+            point_stamped = PointStamped()
+            point_stamped.header.frame_id = "camera_link"
+            point_stamped.header.stamp = timestamp
+            point_stamped.point.x = point_camera_frame[0]
+            point_stamped.point.y = point_camera_frame[1]
+            point_stamped.point.z = point_camera_frame[2]
+
+            # Lookup the transform from camera_link to base
+            transform = self.tf_buffer.lookup_transform(
+                "base",                   # target frame
+                "camera_link",             # source frame
+                timestamp,                # time of the transform
+                rclpy.duration.Duration(seconds=0.1)  # timeout
+            )
+
+            # Transform the point to base frame
+            point_base_frame = do_transform_point(point_stamped, transform)
+            
+            return [point_base_frame.point.x, point_base_frame.point.y, point_base_frame.point.z]
+            
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            self.get_logger().error(f"TF2 error: {str(e)}")
+            return None
+
     def image_callback(self, color_msg, depth_msg):
         if self.received:
             return  # Only process one frame
@@ -134,37 +169,36 @@ class ObjectDetectionNode(Node):
                 point_3d = self.pixel_to_3d(x_center, y_center, depth_value)
                 
                 if point_3d is not None:
-                    # Here you would typically transform to global coordinates using TF2
-                    # For now, we'll just use the camera-frame coordinates
-                    x_global = point_3d[0]
-                    y_global = point_3d[1]
-                    z_global = point_3d[2]
+                    # Transform to base frame
+                    point_base = self.transform_to_base_frame(point_3d, color_msg.header.stamp)
                     
-                    self.get_logger().info(
-                        f"Detected object at: "
-                        f"Pixel: ({x_center}, {y_center}), "
-                        f"Depth: {depth_value} mm, "
-                        f"Global: ({x_global:.3f}, {y_global:.3f}, {z_global:.3f}) m, "
-                        f"Confidence: {confidence:.2f}"
-                    )
+                    if point_base is not None:
+                        self.get_logger().info(
+                            f"Detected object at: "
+                            f"Pixel: ({x_center}, {y_center}), "
+                            f"Depth: {depth_value} mm, "
+                            f"Camera Frame: ({point_3d[0]:.3f}, {point_3d[1]:.3f}, {point_3d[2]:.3f}) m, "
+                            f"Base Frame: ({point_base[0]:.3f}, {point_base[1]:.3f}, {point_base[2]:.3f}) m, "
+                            f"Confidence: {confidence:.2f}"
+                        )
 
-                # Draw visualization
-                cv2.rectangle(annotated_image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
-                cv2.circle(annotated_image, (x_center, y_center), 5, (0, 255, 0), -1)
-                
-                # Add text annotations
-                cv2.putText(annotated_image, f"Depth: {depth_value}mm", (x_center + 10, y_center),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                cv2.putText(annotated_image, f"{confidence:.2f}", (int(box[2]), int(box[3]) + 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                
-                if point_3d is not None:
-                    cv2.putText(annotated_image, f"X: {point_3d[0]:.2f}m", (int(box[0]), int(box[1]) - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                    cv2.putText(annotated_image, f"Y: {point_3d[1]:.2f}m", (int(box[0]), int(box[1]) - 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                    cv2.putText(annotated_image, f"Z: {point_3d[2]:.2f}m", (int(box[0]), int(box[1]) - 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                        # Draw visualization
+                        cv2.rectangle(annotated_image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
+                        cv2.circle(annotated_image, (x_center, y_center), 5, (0, 255, 0), -1)
+                        
+                        # Add text annotations
+                        cv2.putText(annotated_image, f"Depth: {depth_value}mm", (x_center + 10, y_center),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                        cv2.putText(annotated_image, f"{confidence:.2f}", (int(box[2]), int(box[3]) + 15),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                        
+                        # Display base frame coordinates
+                        cv2.putText(annotated_image, f"X: {point_base[0]:.2f}m", (int(box[0]), int(box[1]) - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                        cv2.putText(annotated_image, f"Y: {point_base[1]:.2f}m", (int(box[0]), int(box[1]) - 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                        cv2.putText(annotated_image, f"Z: {point_base[2]:.2f}m", (int(box[0]), int(box[1]) - 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # Show results
         cv2.imshow('Object Detection with 3D Coordinates', annotated_image)
