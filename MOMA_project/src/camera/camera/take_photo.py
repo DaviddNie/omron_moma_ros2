@@ -1,21 +1,3 @@
-# import cv2
-# import numpy as np
-
-# # Load an image
-# image = cv2.imread("testPhotos/centre1.png")
-
-# # Get the dimensions of the original image
-# original_height, original_width = image.shape[:2]
-# center_x, center_y = original_width / 2, original_height / 2
-# print(f"Width and Height are: {original_width}, {original_height}")    
-
-# # Show the result
-# cv2.imshow("Output", image)
-
-# # Wait for a key press to close the window
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-
 import rclpy
 from rclpy.node import Node
 
@@ -24,13 +6,21 @@ from cv_bridge import CvBridge
 import cv2
 
 from message_filters import ApproximateTimeSynchronizer, Subscriber
+from ultralytics import YOLO
+
 
 class OneFrameSubscriber(Node):
     def __init__(self):
         super().__init__('one_frame_subscriber')
 
+        self.declare_parameter('yolo_model_path', '/absolute/path/to/yolov11m.pt')
+        model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
+
         self.bridge = CvBridge()
 
+        self.get_logger().info(f"Loading YOLO model from: {model_path}")
+        self.model = YOLO(model_path)
+        
         # Subscribers to both color and aligned depth
         self.color_sub = Subscriber(self, Image, '/camera/camera/color/image_raw')
         self.depth_sub = Subscriber(self, Image, '/camera/camera/aligned_depth_to_color/image_raw')
@@ -55,23 +45,28 @@ class OneFrameSubscriber(Node):
         color_image = cv2.flip(color_image, 0)
         depth_image = cv2.flip(depth_image, 0)
 
+        # === YOLO Detection ===
+        results = self.model(color_image)[0]  # Get first result from the batch
+        annotated_image = results.plot()  # Draw bounding boxes and labels
+
         # Optional: normalize depth for visualization
         depth_visual = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
         depth_visual = cv2.convertScaleAbs(depth_visual)
 
         # Show both images
-        cv2.imshow('Color Image', color_image)
+        cv2.imshow('YOLO Detected Objects', annotated_image)
         cv2.imshow('Depth Image', depth_visual)
 
         # Use a short loop instead of waitKey(0)
         while True:
             if cv2.waitKey(100) == 27:  # ESC key to close
                 break
-        
+
         cv2.destroyAllWindows()
 
         self.received = True
         rclpy.shutdown()
+
 
 def main():
     rclpy.init()
@@ -84,6 +79,7 @@ def main():
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
