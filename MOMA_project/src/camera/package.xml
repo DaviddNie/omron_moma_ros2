@@ -13,6 +13,8 @@
   <test_depend>python3-pytest</test_depend>
   <depend>rclpy</depend>   <!-- Add rclpy as a runtime dependency -->
   <depend>om_aiv_msg</depend> <!-- Add tm_msgs as a dependency -->
+  <depend>geometry_msgs</depend> 
+  <depend>camera_interface</depend> 
 
   <export>
     <build_type>ament_python</build_type>
