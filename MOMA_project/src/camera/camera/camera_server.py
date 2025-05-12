@@ -14,6 +14,7 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from camera_interface.srv import CameraSrv
 from geometry_msgs.msg import Point
 import asyncio
+import threading
 
 class CameraServer(Node):
     def __init__(self):
@@ -111,7 +112,6 @@ class CameraServer(Node):
         try:
             self.current_frame = self.bridge.imgmsg_to_cv2(color_msg, 'bgr8')
             self.current_depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')
-            self.get_logger().info("Received new frames", throttle_duration_sec=1.0)
         except Exception as e:
             self.get_logger().error(f"Image conversion failed: {str(e)}")
 
@@ -225,8 +225,6 @@ class CameraServer(Node):
                                  throttle_duration_sec=1.0)
             return
         
-        self.get_logger().info("Updating visalisation", throttle_duration_sec=1.0)
-
         display_frame = self.current_frame.copy()
         
         # Draw detections
@@ -271,18 +269,27 @@ class CameraServer(Node):
 def main():
     rclpy.init()
     server = CameraServer()
-    
-    # Use multiple threads to handle callbacks concurrently
+
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(server)
-    
-    try:
+
+    # Start the executor in a background thread
+    def spin_executor():
         executor.spin()
+    executor_thread = threading.Thread(target=spin_executor, daemon=True)
+    executor_thread.start()
+
+    try:
+        while rclpy.ok():
+            # Run visualization from main thread
+            server.update_visualization()
+            cv2.waitKey(1)
     except KeyboardInterrupt:
         server.get_logger().info("Shutting down server")
     finally:
         server.destroy_node()
         rclpy.shutdown()
+        executor_thread.join()
 
 if __name__ == '__main__':
     main()

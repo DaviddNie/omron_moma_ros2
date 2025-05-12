@@ -45,8 +45,6 @@ class CameraClient(Node):
         else:
             self.get_logger().error("Missing required identifier parameter")
             return None
-        
-        self.get_logger().info("input validated")
 
         # Create and send request
         try:
@@ -114,12 +112,8 @@ def main(args=None):
                     
                 if not user_input:
                     continue
-                    
-                client.get_logger().info(f"sending input")
 
                 client.send_request(user_input)
-
-                client.get_logger().info(f"input sent")
                 
             except KeyboardInterrupt:
                 print("\nOperation cancelled by user")
