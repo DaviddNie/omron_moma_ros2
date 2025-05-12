@@ -51,8 +51,10 @@ class ObjectDetectionNode(Node):
         # Flag to track if we've processed a frame
         self.received = False
 
-        # Class index for the object we want to detect (47 for apple in COCO)
-        self.target_class_index = 47  # Replace with your target class index
+        # Class index for the object we want to detect 
+        #   (47 for apple in COCO)
+        #   (64 for mouse in COCO)
+        self.target_class_index = 64  # Replace with your target class index
 
     def camera_info_callback(self, camera_info):
         """Callback for camera info to get intrinsics"""
@@ -75,6 +77,14 @@ class ObjectDetectionNode(Node):
         self.intrinsics.coeffs = [i for i in camera_info.d]
         self.get_logger().info("Received camera intrinsics")
 
+    def transform_camera_to_world(self, point):
+        """Proper coordinate transformation from camera to world frame"""
+        return [
+            point[2],   # Camera Z -> World X (forward)
+            -point[0],  # Camera X -> World Y (left)
+            -point[1]   # Camera Y -> World Z (up)
+        ]
+    
     def pixel_to_3d(self, pixel_x, pixel_y, depth_value):
         """Convert pixel coordinates + depth to 3D point in camera frame"""
         if self.intrinsics is None:
@@ -85,13 +95,14 @@ class ObjectDetectionNode(Node):
         depth_in_meters = depth_value * 0.001
         
         # Note: The order of pixel coordinates is (x, y) for rs2_deproject_pixel_to_point
+        # This matches the corrected version from VisionServer
         point_3d = rs.rs2_deproject_pixel_to_point(
             self.intrinsics, 
-            [pixel_x, pixel_y], 
+            [pixel_x, pixel_y],  # Note the swapped order here
             depth_in_meters
         )
-        
-        return point_3d
+        self.get_logger().info(f"Raw camera coords: {point_3d}")
+        return self.transform_camera_to_world(point_3d)
 
     def transform_to_base_frame(self, point_camera_frame, timestamp):
         for _ in range(10):  # Retry for 10 seconds
@@ -175,7 +186,6 @@ class ObjectDetectionNode(Node):
                             f"Pixel: ({x_center}, {y_center}), "
                             f"Depth: {depth_value} mm, "
                             f"Camera Frame: ({point_3d[0]:.3f}, {point_3d[1]:.3f}, {point_3d[2]:.3f}) m, "
-                            # f"Base Frame: ({point_base[0]:.3f}, {point_base[1]:.3f}, {point_base[2]:.3f}) m, "
                             f"Base Frame: ({point_base.point.x:.3f}, {point_base.point.y:.3f}, {point_base.point.z:.3f}) m, "
                             f"Confidence: {confidence:.2f}"
                         )

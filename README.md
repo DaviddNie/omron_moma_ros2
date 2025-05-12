@@ -147,9 +147,8 @@ e.g. `"home": [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0],`
 ## Camera Code
 
 `ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true pointcloud.enable:=true`
-## YOLO code
-
-`ros2 launch yolo_bringup yolov11.launch.py imgsz_height:=480 imgsz_width:=640 input_image_topic:='/camera/camera/color/image_raw' input_depth_topic:='/camera/camera/depth/image_rect_raw' input_depth_info_topic:='/camera/camera/depth/camera_info' device:='gpu' `
+## YOLO code (Note that `cpu` is used here, remove the attribute if one has a gpu)
+`ros2 launch yolo_bringup yolov11.launch.py imgsz_height:=480 imgsz_width:=640 input_image_topic:='/camera/camera/color/image_raw' input_depth_topic:='/camera/camera/depth/image_rect_raw' input_depth_info_topic:='/camera/camera/depth/camera_info' device:='cpu' `
 
 ## Demo program
 
