@@ -153,16 +153,16 @@ class CameraServer(Node):
         """Async handler for camera requests"""
         self.get_logger().info(f"Processing request: {request.command}")
         
-        if request.command == "take_photo":
-            return await self.handle_take_photo(request)
+        if request.command == "detect":
+            return await self.handle_detect(request)
         else:
             return {
                 'success': False,
                 'message': f"Unknown command: {request.command}"
             }
 
-    async def handle_take_photo(self, request):
-        """Async handler for take_photo command"""
+    async def handle_detect(self, request):
+        """Async handler for detect command"""
         if self.current_frame is None or self.current_depth is None:
             return {
                 'success': False,

@@ -144,6 +144,17 @@ Note that you have to add your key-value pair in the dictionary for the command 
 
 e.g. `"home": [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0],`
 
+
+## Camera Package
+The package runs yolo in the background server, handles object detection through command, and converts the coordinates to global coordinate wrt. `base`. We can then use inverse kinematics to move the arm to that coordinate.
+
+**Launch server**
+`ros2 launch camera camera_server.launch.py `
+**Run client**
+`ros2 run camera camera_client`
+**Example output**
+![alt text](img/camera_pkg_1.png)
+
 ## Camera Code
 
 `ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true pointcloud.enable:=true`

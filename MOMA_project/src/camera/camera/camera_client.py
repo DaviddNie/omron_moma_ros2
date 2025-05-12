@@ -30,8 +30,8 @@ class CameraClient(Node):
         command = parts[0].lower()
         
         # Validate command
-        if command not in ['take_photo', 'other_command']:  # Add other commands as needed
-            self.get_logger().error(f"Invalid command: {command}. Valid commands are: take_photo")
+        if command not in ['detect', 'other_command']:  # Add other commands as needed
+            self.get_logger().error(f"Invalid command: {command}. Valid commands are: detect")
             return None
             
         # Parse identifier (param1)
@@ -90,9 +90,9 @@ def print_usage():
     """Display usage instructions"""
     print("\nUsage:")
     print("  Enter commands in format: <command> <identifier>")
-    print("  Example: 'take_photo 64' - Detect objects of class 64 (mouse)")
+    print("  Example: 'detect 64' - Detect objects of class 64 (mouse)")
     print("  Commands:")
-    print("    take_photo <class_id> - Detect objects of specified class")
+    print("    detect <class_id> - Detect objects of specified class")
     print("    exit                 - Quit the program")
     print()
 

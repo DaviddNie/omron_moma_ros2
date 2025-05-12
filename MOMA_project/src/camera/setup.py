@@ -26,7 +26,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'take_photo = camera.take_photo:main',
             'camera_server = camera.camera_server:main',
             'camera_client = camera.camera_client:main',
         ],
