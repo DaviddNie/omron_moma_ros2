@@ -205,6 +205,8 @@ class CameraServer(Node):
                    for b in boxes])
               if cls_id == request.identifier and conf > 0.5]
             
+            self.update_visualization()
+            
             return {
                 'coordinates': detections,
                 'success': True,
@@ -281,9 +283,7 @@ def main():
 
     try:
         while rclpy.ok():
-            # Run visualization from main thread
-            server.update_visualization()
-            cv2.waitKey(1)
+            rclpy.spin_once(server, timeout_sec=0.1)
     except KeyboardInterrupt:
         server.get_logger().info("Shutting down server")
     finally:
