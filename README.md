@@ -149,7 +149,7 @@ e.g. `"home": [-90.0, 0.0, 90.0, 0.0, 90.0, 0.0],`
 The package runs yolo in the background server, handles object detection through command, and converts the coordinates to global coordinate wrt. `base`. We can then use inverse kinematics to move the arm to that coordinate.
 
 **Launch server**
-`ros2 launch camera camera_server.launch.py `
+`ros2 run camera camera_node `
 **Run client**
 `ros2 run camera camera_client`
 **Example output**

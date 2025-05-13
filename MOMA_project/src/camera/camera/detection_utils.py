@@ -22,7 +22,12 @@ class DetectionHandler:
         # Load YOLO model from parameter
         self.model = YOLO(model_path)
         self.model.fuse()
-        
+
+        self.last_detections = None
+        self.rviz_vis_timer = self.node.create_timer(
+            0.1, 
+            lambda: self.visualiser.update_rviz_visualization(self.last_detections)
+        )
         # Current frame data
         self.current_frame = None
         self.current_depth = None
@@ -102,13 +107,6 @@ class DetectionHandler:
               if cls_id == request.identifier and conf > 0.5]
             
             self.visualiser.update_cv_visualization(self.current_frame, self.last_detections)
-
-            self.node.get_logger().info("i am here")
-
-            if (self.last_detections):
-                self.rviz_vis_timer = self.node.create_timer(0.1, self.visualiser.update_rviz_visualization(self.last_detections))  # 10Hz
-            
-            self.node.get_logger().info("i am here2")
 
             return {
                 'coordinates': detections,

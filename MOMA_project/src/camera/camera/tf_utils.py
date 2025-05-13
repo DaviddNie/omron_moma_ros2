@@ -59,14 +59,14 @@ class TFHandler:
             self.node.get_logger().error(f"TF error: {str(e)}")
             return None
             
-    def publish_transform(self, frame_id, child_frame_id, position, orientation=None):
+    def publish_transform(self, frame_id, child_frame_id, point, orientation=None):
         t = TransformStamped()
         t.header.stamp = self.node.get_clock().now().to_msg()
         t.header.frame_id = frame_id
         t.child_frame_id = child_frame_id
-        t.transform.translation.x = position.x
-        t.transform.translation.y = position.y
-        t.transform.translation.z = position.z
+        t.transform.translation.x = point[0]
+        t.transform.translation.y = point[1]
+        t.transform.translation.z = point[2]
         
         if orientation is None:
             q = tf_transformations.quaternion_from_euler(0, 0, 0)

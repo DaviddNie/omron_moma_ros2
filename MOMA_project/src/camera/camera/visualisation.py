@@ -7,9 +7,10 @@ from geometry_msgs.msg import Point, Pose, TransformStamped
 
 
 class VisualisationHandler:
-    def __init__(self, node):
+    def __init__(self, node, tf_handler):
         self.node = node
         self._lock = threading.Lock()
+        self.tf_handler = tf_handler
         self.marker_pub = node.create_publisher(MarkerArray, 'detected_objects', 10)
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(node)
         
@@ -70,26 +71,8 @@ class VisualisationHandler:
             for i, detection in enumerate(detections):
                 point_3d = detection['point_3d']
 
-                # Publish TF frame for each detection
-                t = TransformStamped()
-                t.header.stamp = self.node.get_clock().now().to_msg()
-                t.header.frame_id = "camera_link"
-                t.child_frame_id = f"detected_object_{i}"
-                
-                # Set transform (camera frame coordinates)
-                t.transform.translation.x = point_3d[0]
-                t.transform.translation.y = point_3d[1]
-                t.transform.translation.z = point_3d[2]
-                
-                # Default orientation (facing forward)
-                q = tf_transformations.quaternion_from_euler(0, 0, 0)
-                t.transform.rotation.x = q[0]
-                t.transform.rotation.y = q[1]
-                t.transform.rotation.z = q[2]
-                t.transform.rotation.w = q[3]
-                
-                self.tf_broadcaster.sendTransform(t)
-                
+                self.tf_handler.publish_transform(frame_id="camera_link", child_frame_id=f"detected_object_{i}", point=point_3d)
+
                 # Create RViz marker
                 marker = Marker()
                 marker.header.frame_id = "camera_link"

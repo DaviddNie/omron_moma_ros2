@@ -72,6 +72,7 @@ class WriteItemServer(Node):
 			"movex": [-0.082, -0.664, 0.613, 180.0, 0.0, 0.0],
 			"movey": [-0.182, -0.564, 0.613, 180.0, 0.0, 0.0],
 			"movez": [-0.182, -0.764, 0.713, 180.0, 0.0, 0.0],
+			"trial": [-0.175, -0.638, 0.3, 180.0, 0.0, 0.0],
 			# Add more positions as needed
 		}
 
@@ -223,7 +224,7 @@ class WriteItemServer(Node):
 			return f"Error: '{param1}' not found in position map."
 
 		req = SetPositions.Request()
-		req.motion_type = 2
+		req.motion_type = 4
 
 		req.positions = self.position_map[param1]
 

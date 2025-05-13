@@ -21,7 +21,10 @@ class CameraServer(Node):
 
         # Setup components
         self.tf_handler = TFHandler(self)
-        self.visualiser = VisualisationHandler(self)
+        self.visualiser = VisualisationHandler(
+            node=self,
+            tf_handler=self.tf_handler,
+        )
 
         self.detector = DetectionHandler(
             node=self,
@@ -73,29 +76,6 @@ class CameraServer(Node):
         response.message = result.get('message', '')
         return response
 
-# def main():
-#     rclpy.init()
-#     server = CameraServer()
-
-#     executor = MultiThreadedExecutor(num_threads=4)
-#     executor.add_node(server)
-
-#     # Start the executor in a background thread
-#     def spin_executor():
-#         executor.spin()
-#     executor_thread = threading.Thread(target=spin_executor, daemon=True)
-#     executor_thread.start()
-
-#     try:
-#         while rclpy.ok():
-#             rclpy.spin_once(server, timeout_sec=0.1)
-#     except KeyboardInterrupt:
-#         server.get_logger().info("Shutting down server")
-#     finally:
-#         server.destroy_node()
-#         rclpy.shutdown()
-#         executor_thread.join()
-
 def main():
     rclpy.init()
     server = CameraServer()
@@ -103,14 +83,21 @@ def main():
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(server)
 
-    try:
+    # Start the executor in a background thread
+    def spin_executor():
         executor.spin()
+    executor_thread = threading.Thread(target=spin_executor, daemon=True)
+    executor_thread.start()
+
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(server, timeout_sec=0.1)
     except KeyboardInterrupt:
         server.get_logger().info("Shutting down server")
     finally:
-        executor.shutdown()
         server.destroy_node()
         rclpy.shutdown()
+        executor_thread.join()
 
 
 if __name__ == '__main__':
