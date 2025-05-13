@@ -289,6 +289,8 @@ class CameraServer(Node):
             marker_array = MarkerArray()
             
             for i, detection in enumerate(self.last_detections):
+                point_3d = detection['point_3d']
+
                 # Publish TF frame for each detection
                 t = TransformStamped()
                 t.header.stamp = self.get_clock().now().to_msg()
@@ -296,9 +298,9 @@ class CameraServer(Node):
                 t.child_frame_id = f"detected_object_{i}"
                 
                 # Set transform (camera frame coordinates)
-                t.transform.translation.x = detection.x
-                t.transform.translation.y = detection.y
-                t.transform.translation.z = detection.z
+                t.transform.translation.x = point_3d[0]
+                t.transform.translation.y = point_3d[1]
+                t.transform.translation.z = point_3d[2]
                 
                 # Default orientation (facing forward)
                 q = tf_transformations.quaternion_from_euler(0, 0, 0)
@@ -319,9 +321,9 @@ class CameraServer(Node):
                 marker.action = Marker.ADD
                 
                 # Set marker position
-                marker.pose.position.x = detection.x
-                marker.pose.position.y = detection.y
-                marker.pose.position.z = detection.z
+                marker.pose.position.x = point_3d[0]
+                marker.pose.position.y = point_3d[1]
+                marker.pose.position.z = point_3d[2]
                 
                 # Set marker scale (size)
                 marker.scale.x = 0.05  # 5cm diameter
