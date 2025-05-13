@@ -14,8 +14,10 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from camera_interface.srv import CameraSrv
 from geometry_msgs.msg import Point, Pose, TransformStamped
 from tf2_ros import TransformBroadcaster
+import tf2_ros
 import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
+import threading
 
 class CameraServer(Node):
     def __init__(self):
@@ -37,11 +39,15 @@ class CameraServer(Node):
         self.current_frame = None
         self.current_depth = None
         self.last_detections = []
+        self._visualization_lock = threading.Lock()
         
-        # TF Broadcaster
+        # OpenCV Visualization Setup
+        self.visualization_enabled = True
+        cv2.namedWindow("Object Detection", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Object Detection", 1280, 720)
+        
+        # RViz Visualization Setup
         self.tf_broadcaster = TransformBroadcaster(self)
-        
-        # Marker publisher for RViz visualization
         self.marker_pub = self.create_publisher(MarkerArray, 'detected_objects', 10)
         
         # Service
@@ -55,8 +61,9 @@ class CameraServer(Node):
         # Subscribers
         self.setup_subscribers()
         
-        # Visualization timer
-        self.vis_timer = self.create_timer(0.1, self.publish_visualization_data)
+        # Visualization timers
+        self.cv_vis_timer = self.create_timer(0.05, self.update_cv_visualization)  # 20Hz
+        self.rviz_vis_timer = self.create_timer(0.1, self.update_rviz_visualization)  # 10Hz
         
         self.get_logger().info("Camera Server ready")
 
@@ -107,8 +114,9 @@ class CameraServer(Node):
     def image_callback(self, color_msg, depth_msg):
         """Store the latest synchronized frames"""
         try:
-            self.current_frame = self.bridge.imgmsg_to_cv2(color_msg, 'bgr8')
-            self.current_depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')
+            with self._visualization_lock:
+                self.current_frame = self.bridge.imgmsg_to_cv2(color_msg, 'bgr8')
+                self.current_depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')
         except Exception as e:
             self.get_logger().error(f"Image conversion failed: {str(e)}")
 
@@ -122,7 +130,7 @@ class CameraServer(Node):
     
     def pixel_to_3d(self, pixel_x, pixel_y, depth_value):
         """Convert pixel+depth to 3D point in camera frame"""
-        if None in [self.intrinsics, depth_value]:
+        if self.current_frame is None or self.current_depth is None:
             return None
             
         # Convert to camera frame coordinates (X right, Y down, Z forward)
@@ -170,7 +178,11 @@ class CameraServer(Node):
                         point_msg.z = point_3d[2]  # Camera Z (forward)
                         detections.append(point_msg)
             
-            self.last_detections = detections
+            with self._visualization_lock:
+                self.last_detections = detections
+                self.last_boxes = boxes[class_ids == request.identifier]
+                self.last_confidences = confidences[class_ids == request.identifier]
+            
             response.coordinates = detections
             response.success = True
             response.message = f"Found {len(detections)} objects"
@@ -182,85 +194,131 @@ class CameraServer(Node):
             response.message = f"Detection failed: {str(e)}"
             return response
 
-    def publish_visualization_data(self):
-        """Publish TF frames and markers for RViz visualization"""
-        if not self.last_detections:
+    def update_cv_visualization(self):
+        """Update OpenCV visualization window"""
+        if not self.visualization_enabled:
             return
             
-        # Create marker array
-        marker_array = MarkerArray()
-        
-        for i, detection in enumerate(self.last_detections):
-            # Publish TF frame for each detection
-            t = TransformStamped()
-            t.header.stamp = self.get_clock().now().to_msg()
-            t.header.frame_id = "camera_link"
-            t.child_frame_id = f"detected_object_{i}"
+        try:
+            with self._visualization_lock:
+                if self.current_frame is None:
+                    return
+                    
+                display_frame = self.current_frame.copy()
+                
+                if hasattr(self, 'last_boxes') and hasattr(self, 'last_confidences'):
+                    for box, conf in zip(self.last_boxes, self.last_confidences):
+                        # Draw bounding box
+                        cv2.rectangle(display_frame, 
+                                    (int(box[0]), int(box[1])),
+                                    (int(box[2]), int(box[3])),
+                                    (0, 255, 0), 2)
+                        
+                        # Draw confidence
+                        conf_text = f"{conf:.2f}"
+                        cv2.putText(display_frame, conf_text,
+                                   (int(box[0]), int(box[1]) - 10),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             
-            # Set transform (camera frame coordinates)
-            t.transform.translation.x = detection.x
-            t.transform.translation.y = detection.y
-            t.transform.translation.z = detection.z
+            # Show the frame (outside lock)
+            cv2.imshow("Object Detection", display_frame)
+            cv2.waitKey(1)
             
-            # Default orientation (facing forward)
-            q = tf_transformations.quaternion_from_euler(0, 0, 0)
-            t.transform.rotation.x = q[0]
-            t.transform.rotation.y = q[1]
-            t.transform.rotation.z = q[2]
-            t.transform.rotation.w = q[3]
+        except Exception as e:
+            self.get_logger().error(f"CV Visualization error: {str(e)}")
+
+    def update_rviz_visualization(self):
+        """Update RViz visualization with TF frames and markers"""
+        if not hasattr(self, 'last_detections') or not self.last_detections:
+            return
             
-            self.tf_broadcaster.sendTransform(t)
+        try:
+            # Create marker array
+            marker_array = MarkerArray()
             
-            # Create RViz marker
-            marker = Marker()
-            marker.header.frame_id = "camera_link"
-            marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = "detections"
-            marker.id = i
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
+            for i, detection in enumerate(self.last_detections):
+                # Publish TF frame for each detection
+                t = TransformStamped()
+                t.header.stamp = self.get_clock().now().to_msg()
+                t.header.frame_id = "camera_link"
+                t.child_frame_id = f"detected_object_{i}"
+                
+                # Set transform (camera frame coordinates)
+                t.transform.translation.x = detection.x
+                t.transform.translation.y = detection.y
+                t.transform.translation.z = detection.z
+                
+                # Default orientation (facing forward)
+                q = tf_transformations.quaternion_from_euler(0, 0, 0)
+                t.transform.rotation.x = q[0]
+                t.transform.rotation.y = q[1]
+                t.transform.rotation.z = q[2]
+                t.transform.rotation.w = q[3]
+                
+                self.tf_broadcaster.sendTransform(t)
+                
+                # Create RViz marker
+                marker = Marker()
+                marker.header.frame_id = "camera_link"
+                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.ns = "detections"
+                marker.id = i
+                marker.type = Marker.SPHERE
+                marker.action = Marker.ADD
+                
+                # Set marker position
+                marker.pose.position.x = detection.x
+                marker.pose.position.y = detection.y
+                marker.pose.position.z = detection.z
+                
+                # Set marker scale (size)
+                marker.scale.x = 0.05  # 5cm diameter
+                marker.scale.y = 0.05
+                marker.scale.z = 0.05
+                
+                # Set marker color (green)
+                marker.color.r = 0.0
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+                marker.color.a = 1.0
+                
+                # Set marker lifetime
+                marker.lifetime.sec = 1
+                
+                marker_array.markers.append(marker)
             
-            # Set marker position
-            marker.pose.position.x = detection.x
-            marker.pose.position.y = detection.y
-            marker.pose.position.z = detection.z
+            self.marker_pub.publish(marker_array)
             
-            # Set marker scale (size)
-            marker.scale.x = 0.05  # 5cm diameter
-            marker.scale.y = 0.05
-            marker.scale.z = 0.05
-            
-            # Set marker color (green)
-            marker.color.r = 0.0
-            marker.color.g = 1.0
-            marker.color.b = 0.0
-            marker.color.a = 1.0
-            
-            # Set marker lifetime
-            marker.lifetime.sec = 1
-            
-            marker_array.markers.append(marker)
-        
-        self.marker_pub.publish(marker_array)
+        except Exception as e:
+            self.get_logger().error(f"RViz Visualization error: {str(e)}")
 
     def destroy_node(self):
         """Cleanup before shutdown"""
+        cv2.destroyAllWindows()
         super().destroy_node()
 
 def main():
     rclpy.init()
     server = CameraServer()
-    
+
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(server)
-    
-    try:
+
+    # Start the executor in a background thread
+    def spin_executor():
         executor.spin()
+    executor_thread = threading.Thread(target=spin_executor, daemon=True)
+    executor_thread.start()
+
+    try:
+        while rclpy.ok():
+            rclpy.spin_once(server, timeout_sec=0.1)
     except KeyboardInterrupt:
         server.get_logger().info("Shutting down server")
     finally:
         server.destroy_node()
         rclpy.shutdown()
+        executor_thread.join()
 
 if __name__ == '__main__':
     main()

@@ -154,6 +154,7 @@ The package runs yolo in the background server, handles object detection through
 `ros2 run camera camera_client`
 **Example output**
 ![alt text](img/camera_pkg_1.png)
+![alt text](img/apple_detection.png)
 
 ## Camera Code
 
