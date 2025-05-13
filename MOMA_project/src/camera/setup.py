@@ -28,6 +28,7 @@ setup(
         'console_scripts': [
             'camera_server = camera.camera_server:main',
             'camera_client = camera.camera_client:main',
+            'camera_node = camera.camera_node:main',
         ],
     },
 )
