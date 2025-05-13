@@ -8,7 +8,6 @@ from geometry_msgs.msg import Point, Pose, TransformStamped
 from ament_index_python.packages import get_package_share_directory
 import os
 import tf2_ros
-import tf2_geometry_msgs
 
 class DetectionHandler:
     def __init__(self, node, tf_handler, visualiser):
@@ -64,29 +63,14 @@ class DetectionHandler:
                         point_msg.z = point_3d[2]
                         
                         try:
-                            # Transform point from camera frame to base frame
-                            tf_buffer = tf2_ros.Buffer()
-                            tf_listener = tf2_ros.TransformListener(tf_buffer, self.node)
-                            
-                            # Wait for the transform to be available
-                            transform = tf_buffer.lookup_transform(
-                                'base',
-                                'camera_link',
-                                rclpy.time.Time(),
-                                timeout=rclpy.duration.Duration(seconds=2.0))
-                            
-                            # Create a PoseStamped with the point in camera frame
-                            camera_pose = Pose()
-                            camera_pose.position = point_msg
-                            
                             # Transform the point to base frame
-                            base_pose = tf2_geometry_msgs.do_transform_pose(camera_pose, transform)
+                            base_pose = self.tf_handler.transform_to_base(point_msg)
                             
                             # Create new point with transformed coordinates
                             transformed_point = Point()
-                            transformed_point.x = base_pose.position.x
-                            transformed_point.y = base_pose.position.y
-                            transformed_point.z = base_pose.position.z
+                            transformed_point.x = base_pose.x
+                            transformed_point.y = base_pose.y
+                            transformed_point.z = base_pose.z
                             
                             detections.append(transformed_point)
                             
@@ -118,8 +102,14 @@ class DetectionHandler:
               if cls_id == request.identifier and conf > 0.5]
             
             self.visualiser.update_cv_visualization(self.current_frame, self.last_detections)
-            self.rviz_vis_timer = self.create_timer(0.1, self.visualiser.update_rviz_visualization(self.last_detections))  # 10Hz
+
+            self.node.get_logger().info("i am here")
+
+            if (self.last_detections):
+                self.rviz_vis_timer = self.node.create_timer(0.1, self.visualiser.update_rviz_visualization(self.last_detections))  # 10Hz
             
+            self.node.get_logger().info("i am here2")
+
             return {
                 'coordinates': detections,
                 'success': True,

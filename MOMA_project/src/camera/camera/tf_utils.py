@@ -1,9 +1,13 @@
+import rclpy
 import tf2_ros
 from geometry_msgs.msg import Point, Pose, TransformStamped
 import tf_transformations
 from rclpy.time import Time
 import pyrealsense2 as rs
 from sensor_msgs.msg import CameraInfo
+from rclpy.callback_groups import ReentrantCallbackGroup
+import tf2_geometry_msgs
+from geometry_msgs.msg import Quaternion
 
 class TFHandler:
     def __init__(self, node):
@@ -36,14 +40,21 @@ class TFHandler:
 
     def transform_to_base(self, point, from_frame='camera_link'):
         try:
-            transform = self.tf_buffer.lookup_transform(
-                'base', from_frame, Time())
-            
-            pose = Pose()
-            pose.position = point
-            
-            transformed = tf2_ros.do_transform_pose(pose, transform)
-            return transformed.position
+            if self.tf_buffer.can_transform('base', from_frame, rclpy.time.Time(), rclpy.duration.Duration(seconds=2.0)):
+                transform = self.tf_buffer.lookup_transform(
+                    'base', from_frame,
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=2.0))
+                
+                pose = Pose()
+                pose.position = point
+                pose.orientation = Quaternion()  # Add this line to prevent NoneType errors
+                
+                transformed = tf2_geometry_msgs.do_transform_pose(pose, transform)
+                return transformed.position
+            else:
+                self.node.get_logger().error('TF transform failed: could not find transform from %s to base' % from_frame)
+                return None
         except Exception as e:
             self.node.get_logger().error(f"TF error: {str(e)}")
             return None

@@ -1,5 +1,6 @@
 import cv2
 import threading
+import tf2_ros
 import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point, Pose, TransformStamped
@@ -10,6 +11,7 @@ class VisualisationHandler:
         self.node = node
         self._lock = threading.Lock()
         self.marker_pub = node.create_publisher(MarkerArray, 'detected_objects', 10)
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster(node)
         
         # OpenCV setup
         cv2.namedWindow("Object Detection", cv2.WINDOW_NORMAL)
@@ -18,7 +20,7 @@ class VisualisationHandler:
     def update_cv_visualization(self, display_frame, detections):
         """Update the visualization window with frame and detections passed in"""
         if display_frame is None:
-            self.get_logger().info("No frame available for visualization", 
+            self.node.get_logger().info("No frame available for visualization", 
                                  throttle_duration_sec=1.0)
             return
         
@@ -70,7 +72,7 @@ class VisualisationHandler:
 
                 # Publish TF frame for each detection
                 t = TransformStamped()
-                t.header.stamp = self.get_clock().now().to_msg()
+                t.header.stamp = self.node.get_clock().now().to_msg()
                 t.header.frame_id = "camera_link"
                 t.child_frame_id = f"detected_object_{i}"
                 
@@ -91,7 +93,7 @@ class VisualisationHandler:
                 # Create RViz marker
                 marker = Marker()
                 marker.header.frame_id = "camera_link"
-                marker.header.stamp = self.get_clock().now().to_msg()
+                marker.header.stamp = self.node.get_clock().now().to_msg()
                 marker.ns = "detections"
                 marker.id = i
                 marker.type = Marker.SPHERE
@@ -121,7 +123,7 @@ class VisualisationHandler:
             self.marker_pub.publish(marker_array)
             
         except Exception as e:
-            self.get_logger().error(f"RViz Visualization error: {str(e)}")
+            self.node.get_logger().error(f"RViz Visualization error: {str(e)}")
         
     def cleanup(self):
         cv2.destroyAllWindows()
