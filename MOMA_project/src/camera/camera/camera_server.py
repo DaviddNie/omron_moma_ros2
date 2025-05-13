@@ -12,9 +12,10 @@ from ultralytics import YOLO
 from sensor_msgs.msg import Image, CameraInfo
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from camera_interface.srv import CameraSrv
-from geometry_msgs.msg import Point
-import asyncio
-import threading
+from geometry_msgs.msg import Point, Pose, TransformStamped
+from tf2_ros import TransformBroadcaster
+import tf_transformations
+from visualization_msgs.msg import Marker, MarkerArray
 
 class CameraServer(Node):
     def __init__(self):
@@ -23,7 +24,6 @@ class CameraServer(Node):
         # Setup callback groups
         self.service_group = ReentrantCallbackGroup()
         self.image_group = ReentrantCallbackGroup()
-        self.visualization_group = ReentrantCallbackGroup()
         
         # Initialize YOLO model
         self.declare_parameter('yolo_model_path', 'default path')
@@ -38,11 +38,13 @@ class CameraServer(Node):
         self.current_depth = None
         self.last_detections = []
         
-        # Visualization window
-        self.visualization_enabled = True
-        cv2.namedWindow("Object Detection", cv2.WINDOW_NORMAL)
+        # TF Broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
         
-        # Service with reentrant callback group
+        # Marker publisher for RViz visualization
+        self.marker_pub = self.create_publisher(MarkerArray, 'detected_objects', 10)
+        
+        # Service
         self.srv = self.create_service(
             CameraSrv, 
             'camera_service', 
@@ -50,15 +52,11 @@ class CameraServer(Node):
             callback_group=self.service_group
         )
         
-        # Subscribers with their own callback group
+        # Subscribers
         self.setup_subscribers()
         
-        # Visualization timer with its own callback group
-        # self.vis_timer = self.create_timer(
-        #     0.05,  # 20Hz
-        #     self.update_visualization,
-        #     callback_group=self.visualization_group
-        # )
+        # Visualization timer
+        self.vis_timer = self.create_timer(0.1, self.publish_visualization_data)
         
         self.get_logger().info("Camera Server ready")
 
@@ -85,7 +83,6 @@ class CameraServer(Node):
             callback_group=self.image_group
         )
         
-        # Create synchronizer with the same callback group as subscribers
         self.ts = ApproximateTimeSynchronizer(
             [self.color_sub, self.depth_sub],
             queue_size=10,
@@ -115,62 +112,44 @@ class CameraServer(Node):
         except Exception as e:
             self.get_logger().error(f"Image conversion failed: {str(e)}")
 
+    def transform_camera_to_world(self, point):
+        """Proper coordinate transformation from camera to world frame"""
+        return [
+            point[2],   # Camera Z -> World X (forward)
+            -point[1] + 0.038 + 0.18,   # Camera Y -> World Z (up)
+            -point[0] - 0.2,  # Camera X -> World Y (left)
+        ]
+    
     def pixel_to_3d(self, pixel_x, pixel_y, depth_value):
-        """Convert pixel+depth to 3D point (camera frame)"""
-        if self.current_frame is None or self.current_depth is None:
-             return None
+        """Convert pixel+depth to 3D point in camera frame"""
+        if None in [self.intrinsics, depth_value]:
+            return None
             
+        # Convert to camera frame coordinates (X right, Y down, Z forward)
         point_3d = rs.rs2_deproject_pixel_to_point(
             self.intrinsics,
-            [pixel_x, pixel_y],
+            [pixel_y, pixel_x],
             depth_value * 0.001  # mm to meters
         )
-        return point_3d
+        return self.transform_camera_to_world(point_3d)
 
     def handle_camera_request(self, request, response):
-        """Service handler that uses async pattern"""
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        result = loop.run_until_complete(self.handle_request_async(request))
-        
-        self.get_logger().info(f"Processing completed")
-
-        if isinstance(result, dict):
-            response.coordinates = result.get('coordinates', [])
-            response.success = result.get('success', False)
-            response.message = result.get('message', '')
+        """Service handler"""
+        if request.command == "detect":
+            return self.handle_detect(request, response)
         else:
             response.success = False
-            response.message = "Invalid response format"
-            
-        return response
+            response.message = f"Unknown command: {request.command}"
+            return response
 
-    async def handle_request_async(self, request):
-        """Async handler for camera requests"""
-        self.get_logger().info(f"Processing request: {request.command}")
-        
-        if request.command == "detect":
-            return await self.handle_detect(request)
-        else:
-            return {
-                'success': False,
-                'message': f"Unknown command: {request.command}"
-            }
-
-    async def handle_detect(self, request):
-        """Async handler for detect command"""
+    def handle_detect(self, request, response):
+        """Handle detection request"""
         if self.current_frame is None or self.current_depth is None:
-            return {
-                'success': False,
-                'message': "No frame available"
-            }
+            response.success = False
+            response.message = "No frame available"
+            return response
             
         try:
-            # Run detection (this could be moved to a thread if too slow)
             results = self.model(self.current_frame, verbose=False)[0]
             boxes = results.boxes.xyxy.cpu().numpy()
             class_ids = results.boxes.cls.cpu().numpy()
@@ -186,110 +165,102 @@ class CameraServer(Node):
                     point_3d = self.pixel_to_3d(x_center, y_center, depth)
                     if point_3d:
                         point_msg = Point()
-                        point_msg.x = point_3d[0]
-                        point_msg.y = point_3d[1]
-                        point_msg.z = point_3d[2]
+                        point_msg.x = point_3d[0]  # Camera X (right)
+                        point_msg.y = point_3d[1]  # Camera Y (down)
+                        point_msg.z = point_3d[2]  # Camera Z (forward)
                         detections.append(point_msg)
             
-            # Update visualization state
-            self.last_detections = [{
-                'box': box,
-                'center': (x_center, y_center),
-                'point_3d': point_3d,
-                'confidence': conf
-            } for box, cls_id, conf, (x_center, y_center, point_3d) in 
-              zip(boxes, class_ids, confidences, 
-                  [(int((b[0]+b[2])/2), int((b[1]+b[3])/2), 
-                    self.pixel_to_3d(int((b[0]+b[2])/2), int((b[1]+b[3])/2), 
-                                    self.current_depth[int((b[1]+b[3])/2), int((b[0]+b[2])/2)]))
-                   for b in boxes])
-              if cls_id == request.identifier and conf > 0.5]
-            
-            self.update_visualization()
-            
-            return {
-                'coordinates': detections,
-                'success': True,
-                'message': f"Found {len(detections)} objects"
-            }
+            self.last_detections = detections
+            response.coordinates = detections
+            response.success = True
+            response.message = f"Found {len(detections)} objects"
+            return response
             
         except Exception as e:
             self.get_logger().error(f"Detection error: {str(e)}")
-            return {
-                'success': False,
-                'message': f"Detection failed: {str(e)}"
-            }
+            response.success = False
+            response.message = f"Detection failed: {str(e)}"
+            return response
 
-    def update_visualization(self):
-        """Update the visualization window with current frame and detections"""
-        if not self.visualization_enabled or self.current_frame is None:
-            self.get_logger().info("No frame available for visualization", 
-                                 throttle_duration_sec=1.0)
+    def publish_visualization_data(self):
+        """Publish TF frames and markers for RViz visualization"""
+        if not self.last_detections:
             return
+            
+        # Create marker array
+        marker_array = MarkerArray()
         
-        display_frame = self.current_frame.copy()
+        for i, detection in enumerate(self.last_detections):
+            # Publish TF frame for each detection
+            t = TransformStamped()
+            t.header.stamp = self.get_clock().now().to_msg()
+            t.header.frame_id = "camera_link"
+            t.child_frame_id = f"detected_object_{i}"
+            
+            # Set transform (camera frame coordinates)
+            t.transform.translation.x = detection.x
+            t.transform.translation.y = detection.y
+            t.transform.translation.z = detection.z
+            
+            # Default orientation (facing forward)
+            q = tf_transformations.quaternion_from_euler(0, 0, 0)
+            t.transform.rotation.x = q[0]
+            t.transform.rotation.y = q[1]
+            t.transform.rotation.z = q[2]
+            t.transform.rotation.w = q[3]
+            
+            self.tf_broadcaster.sendTransform(t)
+            
+            # Create RViz marker
+            marker = Marker()
+            marker.header.frame_id = "camera_link"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "detections"
+            marker.id = i
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            
+            # Set marker position
+            marker.pose.position.x = detection.x
+            marker.pose.position.y = detection.y
+            marker.pose.position.z = detection.z
+            
+            # Set marker scale (size)
+            marker.scale.x = 0.05  # 5cm diameter
+            marker.scale.y = 0.05
+            marker.scale.z = 0.05
+            
+            # Set marker color (green)
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+            
+            # Set marker lifetime
+            marker.lifetime.sec = 1
+            
+            marker_array.markers.append(marker)
         
-        # Draw detections
-        for det in self.last_detections:
-            box = det['box']
-            center = det['center']
-            point_3d = det['point_3d']
-            conf = det['confidence']
-            
-            # Draw bounding box
-            cv2.rectangle(display_frame, 
-                         (int(box[0]), int(box[1])),
-                         (int(box[2]), int(box[3])),
-                         (0, 255, 0), 2)
-            
-            # Draw center point
-            cv2.circle(display_frame, 
-                      (int(center[0]), int(center[1])), 
-                      5, (0, 255, 0), -1)
-            
-            # Draw coordinates text
-            coord_text = f"X:{point_3d[0]:.2f}, Y:{point_3d[1]:.2f}, Z:{point_3d[2]:.2f}"
-            cv2.putText(display_frame, coord_text,
-                       (int(box[0]), int(box[1]) - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-            
-            # Draw confidence
-            conf_text = f"Conf: {conf:.2f}"
-            cv2.putText(display_frame, conf_text,
-                       (int(box[2]), int(box[3]) + 15),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        
-        # Show the frame
-        cv2.imshow("Object Detection", display_frame)
-        cv2.waitKey(1)
+        self.marker_pub.publish(marker_array)
 
     def destroy_node(self):
         """Cleanup before shutdown"""
-        cv2.destroyAllWindows()
         super().destroy_node()
 
 def main():
     rclpy.init()
     server = CameraServer()
-
+    
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(server)
-
-    # Start the executor in a background thread
-    def spin_executor():
-        executor.spin()
-    executor_thread = threading.Thread(target=spin_executor, daemon=True)
-    executor_thread.start()
-
+    
     try:
-        while rclpy.ok():
-            rclpy.spin_once(server, timeout_sec=0.1)
+        executor.spin()
     except KeyboardInterrupt:
         server.get_logger().info("Shutting down server")
     finally:
         server.destroy_node()
         rclpy.shutdown()
-        executor_thread.join()
 
 if __name__ == '__main__':
     main()

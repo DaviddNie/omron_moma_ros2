@@ -276,6 +276,10 @@ Visualization Manager:
           Value: false
         camera_link:
           Value: true
+        detected_object_0:
+          Value: true
+        detected_object_1:
+          Value: true
         flange:
           Value: true
         link_0:
@@ -317,6 +321,10 @@ Visualization Manager:
                               camera_depth_frame:
                                 camera_depth_optical_frame:
                                   {}
+                              detected_object_0:
+                                {}
+                              detected_object_1:
+                                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -392,6 +400,18 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /detected_objects
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -438,25 +458,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.8129215240478516
+      Distance: 0.48996102809906006
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.1524420529603958
-        Y: -0.2684854567050934
-        Z: 0.22904443740844727
+        X: -0.05892237648367882
+        Y: -0.4781774580478668
+        Z: 0.04376387596130371
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.39539799094200134
+      Pitch: 0.7303980588912964
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.11539838463068008
+      Yaw: 5.310396194458008
     Saved: ~
 Window Geometry:
   Displays:
@@ -478,5 +498,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1533
-  X: 190
-  Y: 153
+  X: 213
+  Y: 1165

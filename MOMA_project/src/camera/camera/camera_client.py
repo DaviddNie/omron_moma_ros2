@@ -86,11 +86,14 @@ class CameraClient(Node):
         
         self.get_logger().info("=======================\n")
 
+        #   (47 for apple in COCO)
+        #   (64 for mouse in COCO)
+
 def print_usage():
     """Display usage instructions"""
     print("\nUsage:")
     print("  Enter commands in format: <command> <identifier>")
-    print("  Example: 'detect 64' - Detect objects of class 64 (mouse)")
+    print("  Example: 'detect 47' - Detect objects of class 47 (apple)")
     print("  Commands:")
     print("    detect <class_id> - Detect objects of specified class")
     print("    exit                 - Quit the program")
