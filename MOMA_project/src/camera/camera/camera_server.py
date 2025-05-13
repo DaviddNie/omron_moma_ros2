@@ -18,6 +18,7 @@ import tf2_ros
 import tf_transformations
 from visualization_msgs.msg import Marker, MarkerArray
 import threading
+import asyncio
 
 class CameraServer(Node):
     def __init__(self):
@@ -62,7 +63,6 @@ class CameraServer(Node):
         self.setup_subscribers()
         
         # Visualization timers
-        self.cv_vis_timer = self.create_timer(0.05, self.update_cv_visualization)  # 20Hz
         self.rviz_vis_timer = self.create_timer(0.1, self.update_rviz_visualization)  # 10Hz
         
         self.get_logger().info("Camera Server ready")
@@ -141,23 +141,52 @@ class CameraServer(Node):
         )
         return self.transform_camera_to_world(point_3d)
 
+
     def handle_camera_request(self, request, response):
-        """Service handler"""
-        if request.command == "detect":
-            return self.handle_detect(request, response)
+        """Service handler that uses async pattern"""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        result = loop.run_until_complete(self.handle_request_async(request))
+        
+        self.get_logger().info(f"Processing completed")
+
+        if isinstance(result, dict):
+            response.coordinates = result.get('coordinates', [])
+            response.success = result.get('success', False)
+            response.message = result.get('message', '')
         else:
             response.success = False
-            response.message = f"Unknown command: {request.command}"
-            return response
+            response.message = "Invalid response format"
+            
+        return response
+    
+    async def handle_request_async(self, request):
+        """Async handler for camera requests"""
+        self.get_logger().info(f"Processing request: {request.command}")
+        
+        if request.command == "detect":
+            return await self.handle_detect(request)
+        else:
+            return {
+                'success': False,
+                'message': f"Unknown command: {request.command}"
+            }
 
-    def handle_detect(self, request, response):
-        """Handle detection request"""
+ 
+    async def handle_detect(self, request):
+        """Async handler for detect command"""
         if self.current_frame is None or self.current_depth is None:
-            response.success = False
-            response.message = "No frame available"
-            return response
+            return {
+                'success': False,
+                'message': "No frame available"
+            }
             
         try:
+            # Run detection (this could be moved to a thread if too slow)
             results = self.model(self.current_frame, verbose=False)[0]
             boxes = results.boxes.xyxy.cpu().numpy()
             class_ids = results.boxes.cls.cpu().numpy()
@@ -173,59 +202,82 @@ class CameraServer(Node):
                     point_3d = self.pixel_to_3d(x_center, y_center, depth)
                     if point_3d:
                         point_msg = Point()
-                        point_msg.x = point_3d[0]  # Camera X (right)
-                        point_msg.y = point_3d[1]  # Camera Y (down)
-                        point_msg.z = point_3d[2]  # Camera Z (forward)
+                        point_msg.x = point_3d[0]
+                        point_msg.y = point_3d[1]
+                        point_msg.z = point_3d[2]
                         detections.append(point_msg)
             
-            with self._visualization_lock:
-                self.last_detections = detections
-                self.last_boxes = boxes[class_ids == request.identifier]
-                self.last_confidences = confidences[class_ids == request.identifier]
+            # Update visualization state
+            self.last_detections = [{
+                'box': box,
+                'center': (x_center, y_center),
+                'point_3d': point_3d,
+                'confidence': conf
+            } for box, cls_id, conf, (x_center, y_center, point_3d) in 
+              zip(boxes, class_ids, confidences, 
+                  [(int((b[0]+b[2])/2), int((b[1]+b[3])/2), 
+                    self.pixel_to_3d(int((b[0]+b[2])/2), int((b[1]+b[3])/2), 
+                                    self.current_depth[int((b[1]+b[3])/2), int((b[0]+b[2])/2)]))
+                   for b in boxes])
+              if cls_id == request.identifier and conf > 0.5]
             
-            response.coordinates = detections
-            response.success = True
-            response.message = f"Found {len(detections)} objects"
-            return response
+            self.update_cv_visualization()
+            
+            return {
+                'coordinates': detections,
+                'success': True,
+                'message': f"Found {len(detections)} objects"
+            }
             
         except Exception as e:
             self.get_logger().error(f"Detection error: {str(e)}")
-            response.success = False
-            response.message = f"Detection failed: {str(e)}"
-            return response
+            return {
+                'success': False,
+                'message': f"Detection failed: {str(e)}"
+            }
 
     def update_cv_visualization(self):
-        """Update OpenCV visualization window"""
-        if not self.visualization_enabled:
+        """Update the visualization window with current frame and detections"""
+        if not self.visualization_enabled or self.current_frame is None:
+            self.get_logger().info("No frame available for visualization", 
+                                 throttle_duration_sec=1.0)
             return
+        
+        display_frame = self.current_frame.copy()
+        
+        # Draw detections
+        for det in self.last_detections:
+            box = det['box']
+            center = det['center']
+            point_3d = det['point_3d']
+            conf = det['confidence']
+
+            # Draw bounding box
+            cv2.rectangle(display_frame, 
+                         (int(box[0]), int(box[1])),
+                         (int(box[2]), int(box[3])),
+                         (0, 255, 0), 2)
             
-        try:
-            with self._visualization_lock:
-                if self.current_frame is None:
-                    return
-                    
-                display_frame = self.current_frame.copy()
-                
-                if hasattr(self, 'last_boxes') and hasattr(self, 'last_confidences'):
-                    for box, conf in zip(self.last_boxes, self.last_confidences):
-                        # Draw bounding box
-                        cv2.rectangle(display_frame, 
-                                    (int(box[0]), int(box[1])),
-                                    (int(box[2]), int(box[3])),
-                                    (0, 255, 0), 2)
-                        
-                        # Draw confidence
-                        conf_text = f"{conf:.2f}"
-                        cv2.putText(display_frame, conf_text,
-                                   (int(box[0]), int(box[1]) - 10),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            # Draw center point
+            cv2.circle(display_frame, 
+                      (int(center[0]), int(center[1])), 
+                      5, (0, 255, 0), -1)
             
-            # Show the frame (outside lock)
-            cv2.imshow("Object Detection", display_frame)
-            cv2.waitKey(1)
+            # Draw coordinates text
+            coord_text = f"X:{point_3d[0]:.2f}, Y:{point_3d[1]:.2f}, Z:{point_3d[2]:.2f}"
+            cv2.putText(display_frame, coord_text,
+                       (int(box[0]), int(box[1]) - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             
-        except Exception as e:
-            self.get_logger().error(f"CV Visualization error: {str(e)}")
+            # Draw confidence
+            conf_text = f"Conf: {conf:.2f}"
+            cv2.putText(display_frame, conf_text,
+                       (int(box[2]), int(box[3]) + 15),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        
+        # Show the frame
+        cv2.imshow("Object Detection", display_frame)
+        cv2.waitKey(1)
 
     def update_rviz_visualization(self):
         """Update RViz visualization with TF frames and markers"""
