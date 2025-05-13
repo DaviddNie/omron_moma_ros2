@@ -200,12 +200,52 @@ class CameraServer(Node):
                     depth = self.current_depth[int(y_center), int(x_center)]
                     
                     point_3d = self.pixel_to_3d(x_center, y_center, depth)
+
                     if point_3d:
                         point_msg = Point()
                         point_msg.x = point_3d[0]
                         point_msg.y = point_3d[1]
                         point_msg.z = point_3d[2]
-                        detections.append(point_msg)
+                        
+                        try:
+                            # Transform point from camera frame to base frame
+                            tf_buffer = tf2_ros.Buffer()
+                            tf_listener = tf2_ros.TransformListener(tf_buffer, self)
+                            
+                            # Wait for the transform to be available
+                            transform = tf_buffer.lookup_transform(
+                                'base',
+                                'camera_link',
+                                rclpy.time.Time(),
+                                timeout=rclpy.duration.Duration(seconds=2.0))
+                            
+                            # Create a PoseStamped with the point in camera frame
+                            camera_pose = Pose()
+                            camera_pose.position = point_msg
+                            
+                            # Transform the point to base frame
+                            base_pose = tf2_ros.do_transform_pose(camera_pose, transform)
+                            
+                            # Create new point with transformed coordinates
+                            transformed_point = Point()
+                            transformed_point.x = base_pose.position.x
+                            transformed_point.y = base_pose.position.y
+                            transformed_point.z = base_pose.position.z
+                            
+                            detections.append(transformed_point)
+                            
+                            # Print the transformed coordinates
+                            self.get_logger().info(
+                                f"Transformed coordinates (base frame): "
+                                f"X: {transformed_point.x:.3f}, "
+                                f"Y: {transformed_point.y:.3f}, "
+                                f"Z: {transformed_point.z:.3f}")
+                                
+                        except (tf2_ros.LookupException, 
+                                tf2_ros.ConnectivityException, 
+                                tf2_ros.ExtrapolationException) as e:
+                            self.get_logger().error(f"TF transform failed: {str(e)}")
+                            detections.append(point_msg)  # Fall back to camera frame coordinates
             
             # Update visualization state
             self.last_detections = [{
