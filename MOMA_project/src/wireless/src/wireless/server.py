@@ -1,13 +1,14 @@
 import math
 import rclpy
 from rclpy.node import Node
-from tm_msgs.srv import WriteItem,WirelessInfo,SetPositions,SendScript
+from tm_msgs.srv import WriteItem,WirelessInfo,SetPositions,SendScript, MovementRequest
 from std_msgs.msg import String
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup
 import asyncio
 from tm_msgs.msg import *
 import time
+from .moveit_movement_handler import MoveitMovementHandler
 
 LIGHT_COMMAND = "light"
 MOVE2JOINTPOS = "movejoint"
@@ -17,16 +18,21 @@ GRIP_COMMAND = "grip"
 RELEASE_COMMAND = "release"
 MOVE2POINT_COMMAND = "move2point"
 
+MOVEIT_MOVE2POINT_COMMAND = "moveitmove2point"
+
 class WriteItemServer(Node):
 
 	def __init__(self):
 		super().__init__('write_item_client')
+
+		self.moveit_movement_handler = MoveitMovementHandler(self)
 
 		# Reentrant groups allow parallel callbacks
 		self.write_item_group = ReentrantCallbackGroup()
 		self.set_positions_group = ReentrantCallbackGroup()
 		self.send_script_group = ReentrantCallbackGroup()
 		self.service_group = ReentrantCallbackGroup()
+		self.movement_group = ReentrantCallbackGroup()
 
 		self.is_listening = False
 		# self.connected = False
@@ -36,6 +42,11 @@ class WriteItemServer(Node):
 		self.cli_2 = self.create_client(SetPositions, '/set_positions', callback_group=self.set_positions_group)
 		self.cli_3 = self.create_client(SendScript, '/send_script', callback_group=self.send_script_group)
 		
+		self.moveit_srv = self.create_service(
+            MovementRequest, '/movement_request',
+            self.handle_movement_request,
+            callback_group=self.movement_group
+        )
 		
 		# Subscriptions
 		self.subscription = self.create_subscription(SctResponse, 'sct_response', self.listener_callback, 10)
@@ -142,7 +153,26 @@ class WriteItemServer(Node):
 			return await self.send_exit()
 		else:
 			return "Invalid value received. Only 'light', 'movejoint', 'move2point', 'grip', 'release', 'exit' is allowed."
-			
+	
+	def handle_movement_request(self, request, response):
+		try:
+			try:
+				loop = asyncio.get_event_loop()
+			except RuntimeError:
+				loop = asyncio.new_event_loop()
+				asyncio.set_event_loop(loop)
+
+			result = loop.run_until_complete(self.handle_movement_request_async(request))
+			response.status = str(result)  # Convert bool to string if WirelessInfo.srv uses string status
+		except Exception as e:
+			response.status = f"Error: {str(e)}"
+
+		return response
+	
+	async def handle_movement_request_async(self, request):
+		if request.command == MOVEIT_MOVE2POINT_COMMAND: 
+			return await self.moveit_movement_handler.handle_move2point(request.positions) 
+	
 	async def gripper_engage(self, engage):
 		# Please see gripper documentation and TM Expression (modbus_write) for more detail
 
