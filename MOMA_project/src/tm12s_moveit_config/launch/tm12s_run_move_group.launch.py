@@ -180,6 +180,25 @@ def generate_launch_description():
         arguments=args
     )
 
+    # Add the MoveIt Path Planning Server
+    moveit_path_planning_server_node = Node(
+        package='moveit_path_planner',
+        executable='moveit_path_planning_server',
+        name='moveit_path_planning_server',
+        output='screen',
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            robot_description_kinematics,
+            ompl_planning_pipeline_config,
+            moveit_controllers,
+            trajectory_execution,
+            planning_scene_monitor_parameters,
+            joint_limits_yaml,
+            {"use_sim_time": True},
+        ],
+    )
+
     # Launching all the nodes
     return LaunchDescription(
         [
@@ -188,5 +207,6 @@ def generate_launch_description():
             static_tf,
             robot_state_publisher,
             run_move_group_node,
+            moveit_path_planning_server_node,
         ]
     )

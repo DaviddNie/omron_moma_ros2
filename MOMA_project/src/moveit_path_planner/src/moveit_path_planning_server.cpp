@@ -10,7 +10,7 @@
 #include "moveit_msgs/msg/joint_constraint.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
-#include "tm_msgs/srv/movement_request.hpp"  // Replace with your actual service name
+#include "tm_msgs/srv/movement_request.hpp"
 
 class MoveitPathPlanningServer {
     public:
@@ -45,16 +45,16 @@ class MoveitPathPlanningServer {
     
         move_group_->setJointValueTarget(positions);
     
-        // Optional constraints (example)
-        moveit_msgs::msg::Constraints constraints;
-        moveit_msgs::msg::JointConstraint joint_constraint;
-        joint_constraint.joint_name = "shoulder_joint";
-        joint_constraint.position = 0.0;
-        joint_constraint.tolerance_above = 0.1;
-        joint_constraint.tolerance_below = 0.1;
-        joint_constraint.weight = 1.0;
-        constraints.joint_constraints.push_back(joint_constraint);
-        move_group_->setPathConstraints(constraints);
+        // // Optional constraints (example)
+        // moveit_msgs::msg::Constraints constraints;
+        // moveit_msgs::msg::JointConstraint joint_constraint;
+        // joint_constraint.joint_name = "joint_5";
+        // joint_constraint.position = 0.0;
+        // joint_constraint.tolerance_above = 0.1;
+        // joint_constraint.tolerance_below = 0.1;
+        // joint_constraint.weight = 1.0;
+        // constraints.joint_constraints.push_back(joint_constraint);
+        // move_group_->setPathConstraints(constraints);
     
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         bool success = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
