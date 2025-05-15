@@ -276,10 +276,6 @@ Visualization Manager:
           Value: false
         camera_link:
           Value: true
-        detected_object_0:
-          Value: true
-        detected_object_1:
-          Value: true
         flange:
           Value: true
         link_0:
@@ -321,10 +317,6 @@ Visualization Manager:
                               camera_depth_frame:
                                 camera_depth_optical_frame:
                                   {}
-                              detected_object_0:
-                                {}
-                              detected_object_1:
-                                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -458,25 +450,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.48996102809906006
+      Distance: 1.953479528427124
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.05892237648367882
-        Y: -0.4781774580478668
-        Z: 0.04376387596130371
+        X: -0.12730874121189117
+        Y: -0.3652550280094147
+        Z: 0.29112011194229126
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7303980588912964
+      Pitch: 0.38539808988571167
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.310396194458008
+      Yaw: 5.43039608001709
     Saved: ~
 Window Geometry:
   Displays:

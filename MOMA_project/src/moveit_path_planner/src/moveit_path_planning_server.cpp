@@ -53,70 +53,58 @@ public:
       "/moveit_path_plan",
       std::bind(&MoveitPathPlanningServer::handle_request, this, _1, _2)
     );
-
-    // Get and print current pose
-    geometry_msgs::msg::PoseStamped current_pose = move_group_->getCurrentPose();
-    geometry_msgs::msg::Pose pose = current_pose.pose;
-
-    // Convert quaternion to RPY
-    tf2::Quaternion q(
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w
-    );
-
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-
-    RCLCPP_INFO(node_->get_logger(), "Current End-Effector Pose:");
-    RCLCPP_INFO(node_->get_logger(), "  Position: x=%.3f, y=%.3f, z=%.3f", 
-                pose.position.x, pose.position.y, pose.position.z);
-    RCLCPP_INFO(node_->get_logger(), "  Orientation (RPY in radians): roll=%.3f, pitch=%.3f, yaw=%.3f", 
-                roll, pitch, yaw);
-    RCLCPP_INFO(node_->get_logger(), "  Orientation (RPY in degrees): roll=%.1f°, pitch=%.1f°, yaw=%.1f°", 
-                roll * 180.0 / M_PI, pitch * 180.0 / M_PI, yaw * 180.0 / M_PI);
   }
 
   moveit_msgs::msg::Constraints create_path_constraints() {
     moveit_msgs::msg::Constraints constraints;
     
-    // Joint constraints for joint4 (-45 to +45 degrees)
-    moveit_msgs::msg::JointConstraint joint4_constraint;
-    joint4_constraint.joint_name = "joint_4";
-    joint4_constraint.position = 0.0;  // Center of range
-    joint4_constraint.tolerance_above = 0.785;  // 45 degrees in radians
-    joint4_constraint.tolerance_below = 0.785;
-    joint4_constraint.weight = 1.0;
-    constraints.joint_constraints.push_back(joint4_constraint);
+    // // Joint constraints for joint4 (-45 to +45 degrees)
+    // moveit_msgs::msg::JointConstraint joint4_constraint;
+    // joint4_constraint.joint_name = "joint_4";
+    // joint4_constraint.position = 0.0;  // Center of range
+    // joint4_constraint.tolerance_above = 0.785;  // 45 degrees in radians
+    // joint4_constraint.tolerance_below = 0.785;
+    // joint4_constraint.weight = 1.0;
+    // constraints.joint_constraints.push_back(joint4_constraint);
 
-    // Joint constraints for joint5 (-45 to +135 degrees)
-    moveit_msgs::msg::JointConstraint joint5_constraint;
-    joint5_constraint.joint_name = "joint_5";
-    joint5_constraint.position = 1.5708;  // Center of range (90 degrees)
-    joint5_constraint.tolerance_below = 0.785;  // 45 degrees in radians
-    joint5_constraint.tolerance_above = 0.785;  // 45 degrees in radians
-    joint5_constraint.weight = 1.0;
-    constraints.joint_constraints.push_back(joint5_constraint);
+    // // Joint constraints for joint5 (-45 to +135 degrees)
+    // moveit_msgs::msg::JointConstraint joint5_constraint;
+    // joint5_constraint.joint_name = "joint_5";
+    // joint5_constraint.position = 1.5708;  // Center of range (90 degrees)
+    // joint5_constraint.tolerance_below = 0.785;  // 45 degrees in radians
+    // joint5_constraint.tolerance_above = 0.785;  // 45 degrees in radians
+    // joint5_constraint.weight = 1.0;
+    // constraints.joint_constraints.push_back(joint5_constraint);
 
-    // End effector orientation constraint (facing downward)
-    moveit_msgs::msg::OrientationConstraint orientation_constraint;
-    orientation_constraint.header.frame_id = move_group_->getPlanningFrame();
-    orientation_constraint.link_name = move_group_->getEndEffectorLink();
+    // // End effector orientation constraint (facing downward)
+    // moveit_msgs::msg::OrientationConstraint orientation_constraint;
+    // orientation_constraint.header.frame_id = move_group_->getPlanningFrame();
+    // orientation_constraint.link_name = move_group_->getEndEffectorLink();
     
-    // Desired orientation (facing downward: Z-axis pointing down)
-    // This depends on your robot's URDF definition
-    tf2::Quaternion q;
-    q.setRPY(0, M_PI, 0);  // Roll=0, Pitch=π, Yaw=0 (facing downward)
-    orientation_constraint.orientation = tf2::toMsg(q);
+    // // Desired orientation (facing downward: Z-axis pointing down)
+    // // This depends on your robot's URDF definition
+    // tf2::Quaternion q;
+    // q.setRPY(0, M_PI, 0);  // Roll=0, Pitch=π, Yaw=0 (facing downward)
+    // orientation_constraint.orientation = tf2::toMsg(q);
     
-    // Tolerance values (in radians)
-    orientation_constraint.absolute_x_axis_tolerance = 0.5;  // ~5.7 degrees
-    orientation_constraint.absolute_y_axis_tolerance = 0.5;
-    orientation_constraint.absolute_z_axis_tolerance = 0.5;
-    orientation_constraint.weight = 1.0;
+    // // Tolerance values (in radians)
+    // orientation_constraint.absolute_x_axis_tolerance = 0.5;  // ~5.7 degrees
+    // orientation_constraint.absolute_y_axis_tolerance = 0.5;
+    // orientation_constraint.absolute_z_axis_tolerance = 0.5;
+    // orientation_constraint.weight = 1.0;
     
-    constraints.orientation_constraints.push_back(orientation_constraint);
+    // constraints.orientation_constraints.push_back(orientation_constraint);
+
+    moveit_msgs::msg::Constraints path_constraints;
+    moveit_msgs::msg::JointConstraint joint6_constraint;
+
+    joint6_constraint.joint_name = "joint_6";
+    joint6_constraint.position = 0.0;  // Centered at 0 rad, adjust if needed
+    joint6_constraint.tolerance_above = M_PI;     // Allow 180 deg in positive
+    joint6_constraint.tolerance_below = M_PI;     // Allow 180 deg in negative
+    joint6_constraint.weight = 1.0;
+
+    path_constraints.joint_constraints.push_back(joint6_constraint);
 
     return constraints;
   }
@@ -130,23 +118,43 @@ public:
     const std::vector<double>& positions = request->positions;
 
     if (positions.size() != 6) {
-      RCLCPP_ERROR(node_->get_logger(), "Expected 6 joint positions, got %zu", positions.size());
+      RCLCPP_ERROR(node_->get_logger(), "Expected 6 pose elements (x, y, z, roll, pitch, yaw), got %zu", positions.size());
       response->success = false;
       return;
     }
-
-    // Set path constraints
-    move_group_->setPathConstraints(create_path_constraints());
-
-    // Set joint target
-    move_group_->setJointValueTarget(positions);
-
+    
+    // Extract Cartesian position and orientation
+    double x = positions[0];
+    double y = positions[1];
+    double z = positions[2];
+    double roll = positions[3];
+    double pitch = positions[4];
+    double yaw = positions[5];
+    
+    // Convert RPY to Quaternion
+    tf2::Quaternion q;
+    q.setRPY(roll, pitch, yaw);
+    q.normalize();  // Optional but recommended
+    
+    geometry_msgs::msg::Pose target_pose;
+    target_pose.position.x = x;
+    target_pose.position.y = y;
+    target_pose.position.z = z;
+    target_pose.orientation.x = q.x();
+    target_pose.orientation.y = q.y();
+    target_pose.orientation.z = q.z();
+    target_pose.orientation.w = q.w();
+    
+    // Set Cartesian pose target
+    move_group_->setPoseTarget(target_pose);
+    // move_group_->setPathConstraints(create_path_constraints());
+    
     // Plan with retries
     moveit::planning_interface::MoveGroupInterface::Plan plan;
     bool success = false;
     int attempts = 0;
     const int max_attempts = 5;
-
+    
     while (!success && attempts < max_attempts) {
       success = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
       attempts++;
@@ -155,22 +163,59 @@ public:
         move_group_->setPlanningTime(move_group_->getPlanningTime() + 2.0);
       }
     }
-
-    // Clear constraints after planning
-    move_group_->clearPathConstraints();
-
+    
     if (success) {
-      RCLCPP_INFO(node_->get_logger(), 
-                 "Plan successful after %d attempts. Executing...", 
-                 attempts);
+      RCLCPP_INFO(node_->get_logger(), "Plan successful after %d attempts. Executing...", attempts);
       move_group_->execute(plan);
       response->success = true;
     } else {
-      RCLCPP_ERROR(node_->get_logger(), 
-                  "Planning failed after %d attempts.", 
-                  max_attempts);
+      RCLCPP_ERROR(node_->get_logger(), "Planning failed after %d attempts.", max_attempts);
       response->success = false;
     }
+    // const std::vector<double>& positions = request->positions;
+
+    // if (positions.size() != 6) {
+    //   RCLCPP_ERROR(node_->get_logger(), "Expected 6 joint positions, got %zu", positions.size());
+    //   response->success = false;
+    //   return;
+    // }
+
+    // // Set path constraints
+    // // move_group_->setPathConstraints(create_path_constraints());
+
+    // // Set joint target
+    // move_group_->setJointValueTarget(positions);
+
+    // // Plan with retries
+    // moveit::planning_interface::MoveGroupInterface::Plan plan;
+    // bool success = false;
+    // int attempts = 0;
+    // const int max_attempts = 5;
+
+    // while (!success && attempts < max_attempts) {
+    //   success = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    //   attempts++;
+    //   if (!success) {
+    //     RCLCPP_WARN(node_->get_logger(), "Planning attempt %d failed, retrying...", attempts);
+    //     move_group_->setPlanningTime(move_group_->getPlanningTime() + 2.0);
+    //   }
+    // }
+
+    // // Clear constraints after planning
+    // move_group_->clearPathConstraints();
+
+    // if (success) {
+    //   RCLCPP_INFO(node_->get_logger(), 
+    //              "Plan successful after %d attempts. Executing...", 
+    //              attempts);
+    //   move_group_->execute(plan);
+    //   response->success = true;
+    // } else {
+    //   RCLCPP_ERROR(node_->get_logger(), 
+    //               "Planning failed after %d attempts.", 
+    //               max_attempts);
+    //   response->success = false;
+    // }
   }
 
 private:
