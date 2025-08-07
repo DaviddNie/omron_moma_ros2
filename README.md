@@ -1,18 +1,20 @@
-# UNSW Thesis Project : ROS2 <-> Omron MoMa
+# Control Omron MObile MAnipulator (MoMa) through ROS2
 This repo contains the files and information necessary to use ROS2 Humble to interface with UNSW Mechatronics Lab MoMa system purshased from Omron. 
 
 This repo is heavily based on the [Omron APAC repositories](https://github.com/OmronAPAC), that use ROS2 Foxy to interface with a similar Omron MoMa system, though condensed and rewritten to easily work with UNSW's MoMa system.
+
+**Author**: David Nie, Taha Inam, Chun Fong Wong  
+**Supervisor**: Dr. Leo Wu 
 
 # Overview of Components Necessary
 ## Omron MoMa
 The Omron MoMa consists of the following components:
 - LD250
 - TM12-S
-- The plc and input output modules
-- the gripper
-- miscellaneous wiring components
-- Add more details to this
-To use the MoMa as supplied by Omron, the LD250 will need this program, the tm12s will need this program, and the plc will need this program. Refer to these documents on how to install and use the software
+- Robotiq AGC-OMRON-KIT-140 Adaptive Gripper Kit
+
+![alt text](img/robot.jpg)
+
 ## ROS2 System
 To use ROS2 to interface with the MoMa, the following components are necessary:
 - Remote PC (Ubuntu 22.04)
